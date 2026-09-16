@@ -1,0 +1,21 @@
+{
+  "name": "@student/web", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "check": "tsc --noEmit",
+    "api:generate": "openapi-typescript ../../openapi.json -o src/api/schema.d.ts"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0", "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.3.11", "@mui/icons-material": "^7.3.11",
+    "@tanstack/react-query": "^5.103.1", "luxon": "^3.7.2",
+    "openapi-fetch": "^0.15.0", "react": "^19.3.0", "react-dom": "^19.3.0",
+    "react-router-dom": "^7.9.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0", "@types/luxon": "^3.7.1",
+    "@types/node": "^22.19.0", "@vitejs/plugin-react": "^5.1.0",
+    "openapi-typescript": "^7.10.1", "typescript": "~5.9.3", "vite": "^7.3.0"
+  }
+}

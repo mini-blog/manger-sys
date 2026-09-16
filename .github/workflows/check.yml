@@ -1,0 +1,31 @@
+name: Check foundation
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: student
+          POSTGRES_PASSWORD: student_dev
+          POSTGRES_DB: student_sys
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U student -d student_sys"
+          --health-interval 5s --health-timeout 3s --health-retries 15
+    env:
+      DATABASE_URL: postgresql://student:student_dev@localhost:5433/student_sys
+      SEED_PASSWORD: DemoPass2026!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate && npm run db:migrate && npm run db:seed
+      - run: npm run check && npm run test && npm run test:integration
+      - run: npm run build
+      - run: npm run openapi:generate
+      - run: git diff --exit-code -- openapi.json apps/web/src/api/schema.d.ts

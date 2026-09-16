@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+}
+
+enum ParticipantKind {
+  REGULAR
+  TRIAL
+}
+
+enum SessionStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  name         String
+  role         Role
+  passwordHash String
+  sessions     AuthSession[]
+  students     Student[]
+  lessons      ClassSession[]
+}
+
+model AuthSession {
+  tokenHash String @id
+  csrfToken String
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @db.Timestamptz(3)
+  @@index([expiresAt])
+}
+
+model Student {
+  id           String @id @default(cuid())
+  name         String
+  yearLevel    String
+  ownerAdminId String
+  owner        User @relation(fields: [ownerAdminId], references: [id])
+  participants SessionParticipant[]
+  @@index([ownerAdminId])
+}
+
+model Course {
+  id       String @id @default(cuid())
+  name     String @unique
+  sessions ClassSession[]
+}
+
+model ClassGroup {
+  id          String @id @default(cuid())
+  name        String
+  targetLevel String
+  sessions    ClassSession[]
+}
+
+model ClassSession {
+  id           String @id @default(cuid())
+  classGroupId String
+  classGroup   ClassGroup @relation(fields: [classGroupId], references: [id])
+  courseId     String
+  course       Course @relation(fields: [courseId], references: [id])
+  teacherId    String
+  teacher      User @relation(fields: [teacherId], references: [id])
+  startsAt     DateTime @db.Timestamptz(3)
+  endsAt       DateTime @db.Timestamptz(3)
+  capacity     Int
+  status       SessionStatus @default(SCHEDULED)
+  participants SessionParticipant[]
+  @@index([startsAt])
+  @@index([teacherId, startsAt])
+  @@index([classGroupId, startsAt])
+}
+
+model SessionParticipant {
+  id           String @id @default(cuid())
+  sessionId    String
+  session      ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student @relation(fields: [studentId], references: [id])
+  kind         ParticipantKind @default(REGULAR)
+  isNewToClass Boolean @default(false)
+  @@unique([sessionId, studentId])
+}

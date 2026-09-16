@@ -26,7 +26,7 @@
 
 StudentContact 的关系可为 PARENT / GUARDIAN / SELF / OTHER；isPrimary 仅表示首选联系人，不自动证明法定监护权或付款责任。家长联系邮箱不加全局唯一约束，也不作为学生标识；一位联系人可以关联多个孩子。员工 User.email 的唯一登录约束与此独立。
 
-人工 FollowUpNote 记录 contactId、channel、结果和时间，服务端验证联系人确实关联当前学生、所选渠道有对应信息。系统自动关闭待办的 Note 使用 SYSTEM 来源，contactId/channel 为空，不伪装成人工沟通。保存 AI 草稿不生成沟通记录、不关闭或推迟待办；本次不接入发送服务，也不把“复制文案”显示成“发送成功”。
+人工 FollowUpNote 记录 contactId、channel、结果和时间；channel 另支持 IN_PERSON 线下沟通。服务端验证联系人确实关联当前学生；远程渠道须有对应信息，线下无需渠道账号。系统自动关闭待办的 Note 使用 SYSTEM 来源，contactId/channel 为空，不伪装成人工沟通。保存 AI 草稿不生成沟通记录、不关闭或推迟待办；本次不接入发送服务，也不把“复制文案”显示成“发送成功”。
 
 ### 课表与单次调整（目标切片，尚未实现写操作）
 
@@ -85,7 +85,7 @@ NestJS 通过千问 OpenAI 兼容接口调用，配置 `QWEN_API_KEY`、`QWEN_BA
 
 目标地域及模型须验证结构化输出能力：支持时使用严格 JSON Schema；否则配置 JSON Object 并在提示中明确 JSON 要求。JSON Object 只保证 JSON 形式，必须独立验证结构。参考[千问结构化输出官方文档](https://docs.modelstudio.console.alibabacloud.com/zh/model-studio/qwen-structured-output)。
 
-生成请求选择关联的 contactId，默认采用其 preferredChannel/preferredLanguage，顾问可显式选择其他可用渠道；模型只接收渠道和语言，不接收联系人 ID 或实际地址。模型内容统一按所选语言生成，英文使用 en-AU；返回结构所有键必有：summary（1–500 字符）、intentSignal（POSITIVE / UNCERTAIN / NEGATIVE / INSUFFICIENT）、evidence（0–5条，包含 recordId 与 reason）、concerns（最多5条）、nextAction（1–500字符）、talkingPoints（1–5 条，各 1–200 字符）、subject（string 或 null）、messageDraft（string 或 null）。EMAIL 要求 subject 为 1–150 字符、messageDraft 为 1–1000 字符；SMS/WECHAT 要求 subject=null、messageDraft 为 1–500 字符；PHONE 要求 subject/messageDraft 均为 null，通过 talkingPoints 提供电话提纲。短信字数上限仅是草稿长度，不保证实际发送为一条短信。
+生成请求选择关联的 contactId，默认采用其 preferredChannel/preferredLanguage，顾问可显式选择其他可用渠道；模型只接收渠道和语言，不接收联系人 ID 或实际地址。模型内容统一按所选语言生成，英文使用 en-AU；返回结构所有键必有：summary（1–500 字符）、intentSignal（POSITIVE / UNCERTAIN / NEGATIVE / INSUFFICIENT）、evidence（0–5条，包含 recordId 与 reason）、concerns（最多5条）、nextAction（1–500字符）、talkingPoints（1–5 条，各 1–200 字符）、subject（string 或 null）、messageDraft（string 或 null）。EMAIL 要求 subject 为 1–150 字符、messageDraft 为 1–1000 字符；SMS/WECHAT 要求 subject=null、messageDraft 为 1–500 字符；PHONE / IN_PERSON 要求 subject/messageDraft 均为 null，通过 talkingPoints 提供电话提纲。短信字数上限仅是草稿长度，不保证实际发送为一条短信。
 
 模型输入来自咨询、沟通历史和个人课堂反馈，每条附记录 ID；限制条数与长度，优先近期记录。Zod 严格模式拒绝额外字段，并按请求渠道验证条件；evidence.recordId 必须来自本次授权输入，无证据则要求 INSUFFICIENT。服务端验证能排除伪造 ID，但不能证明结论正确，Admin 必须审核。模型不生成百分比成交概率、不自动改意向状态；记录模型、生成时间和输入记录 ID 以供追溯。服务端为响应附加受信的 channel、language 和 `source: llm`；失败返回 intentSignal=INSUFFICIENT、evidence=[] 的同渠道同语言模板及 `source: template`。页面按渠道展示邮件主题、短文案或电话提纲，清楚标记来源，不伪装模型成功。
 

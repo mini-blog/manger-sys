@@ -1,0 +1,32 @@
+{
+  "name": "student-sys",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "engines": {
+    "node": ">=22.12 <23"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w @student/api\" \"npm run dev -w @student/web\"",
+    "build": "npm run build -w @student/api && npm run build -w @student/web",
+    "check": "npm run check -w @student/api && npm run check -w @student/web",
+    "test": "npm run test -w @student/api",
+    "db:generate": "npm run db:generate -w @student/api",
+    "db:migrate": "npm run db:migrate -w @student/api",
+    "db:seed": "npm run db:seed -w @student/api",
+    "openapi:generate": "npm run build -w @student/api && npm run openapi:export -w @student/api && npm run api:generate -w @student/web",
+    "format": "prettier --write \"apps/**/src/**/*.{ts,tsx}\" \"apps/**/test/*.{ts,mjs}\" \"apps/**/prisma/seed.ts\" \"*.json\" \"*.yaml\"",
+    "test:integration": "npm run build -w @student/api && node apps/api/test/integration.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.24.4"
+  }
+}

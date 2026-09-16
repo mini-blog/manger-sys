@@ -36,7 +36,7 @@
 | Enrollment | studentId、classGroupId、startsOn、endsOn（不含）；学生与班级多对多，有效日期确定正式名单 |
 | SessionParticipant / TrialBooking | 课次学生名单及 REGULAR/TRIAL 来源，学生+课次唯一；试听另关联 inquiryId、权益、预约状态及操作者 |
 | TrialEntitlement / StudentFeedback | 学生+课程试听机会及占用／消耗来源；学生个人到课情况、能力观察、偏好、建议级别、老师和课次时间 |
-| FollowUp / FollowUpNote | studentId、唯一来源咨询或试听、dueAt、status、version；追加 contactId、channel、沟通结果、备注、操作者与时间 |
+| FollowUp / FollowUpNote | studentId、唯一来源咨询或试听、dueAt、status、version；追加 contactId、channel（含线下）、沟通结果、备注、操作者与时间 |
 | LessonPackage / PurchaseOrder* | 课时包：课程、单位数、AUD 标价；订单：付款联系人、受益学生、商品与成交价快照、支付状态、确认人／时间 |
 | Attendance* | studentId、sessionId、result、feedback、chargeStatus；学生+课次唯一 |
 | CreditAccount / CreditEntry* | 学生+课程账户；delta、reason、orderId、sessionId、reversesEntryId、createdBy/At、唯一业务键 |
