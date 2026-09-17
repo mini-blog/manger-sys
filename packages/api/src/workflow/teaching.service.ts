@@ -19,7 +19,12 @@ import { contactReady } from './students.service';
 import * as D from './dto';
 import type { Student } from '../generated/prisma/client';
 import { EntitlementsService } from './entitlements.service';
-import { closeRebooking, ensureFollowup, type FollowupEvent } from './followup-policy';
+import {
+  closeRebooking,
+  ensureFollowup,
+  moveRebookingLinks,
+  type FollowupEvent,
+} from './followup-policy';
 import { studentCategory } from './membership';
 export async function teacherTask(tx: Tx, l: FullLesson) {
   const existing = await tx.task.findFirst({ where: { type: 'LESSON_FEEDBACK', sessionId: l.id } });
@@ -49,16 +54,6 @@ export async function followTask(
   now: Date,
 ) {
   return ensureFollowup(tx, p.id, reason, now);
-}
-export async function closeOldFollowups(tx: Tx, studentId: string, courseId: string, now: Date) {
-  await tx.task.updateMany({
-    where: {
-      type: 'TRIAL_FOLLOWUP',
-      status: 'OPEN',
-      participant: { studentId, session: { courseId } },
-    },
-    data: { status: 'DONE', reason: 'REBOOKED', completedAt: now, version: { increment: 1 } },
-  });
 }
 @Injectable()
 export class TeachingService {
@@ -447,7 +442,8 @@ export class TeachingService {
                 'ALREADY_BOOKED',
                 'The target lesson already has an incompatible student record.',
               );
-            await this.eligible(tx, s, target, p.kind, [p.id, ...(prior ? [prior.id] : [])]);
+            // Only the outgoing booking releases a held credit; the cancelled target holds none.
+            await this.eligible(tx, s, target, p.kind, [p.id]);
             await tx.sessionParticipant.update({
               where: { id },
               data: { bookingStatus: 'CANCELLED', version: { increment: 1 } },
@@ -460,11 +456,29 @@ export class TeachingService {
               : await tx.sessionParticipant.create({
                   data: { sessionId: target.id, studentId: s.id, kind: p.kind },
                 });
-            await tx.classSession.update({
+            const changedTarget = await tx.classSession.update({
               where: { id: target.id },
               data: { version: { increment: 1 } },
+              include: lessonInclude,
             });
-            if (p.kind === 'TRIAL') await closeOldFollowups(tx, s.id, l.courseId, this.clock.now());
+            await tx.classSession.update({
+              where: { id: l.id },
+              data: { version: { increment: 1 } },
+            });
+            const followupChanges = await moveRebookingLinks(tx, id, next.id, this.clock.now());
+            const before = {
+              studentName: s.name,
+              kind: p.kind,
+              participantId: id,
+              ...lessonDto(l),
+            };
+            const after = {
+              studentName: s.name,
+              kind: next.kind,
+              participantId: next.id,
+              ...lessonDto(changedTarget),
+              followupChanges,
+            };
             await this.log(
               tx,
               user,
@@ -472,16 +486,25 @@ export class TeachingService {
               'MOVE_STUDENT',
               body.reason,
               key!,
-              { studentName: s.name, ...lessonDto(l) },
-              { studentName: s.name, ...lessonDto(target) },
+              before,
+              after,
               s.id,
               id,
               target.id,
             );
-            await tx.classSession.update({
-              where: { id: l.id },
-              data: { version: { increment: 1 } },
-            });
+            await this.log(
+              tx,
+              user,
+              target,
+              'MOVE_STUDENT_IN',
+              body.reason,
+              key!,
+              before,
+              after,
+              s.id,
+              next.id,
+              l.id,
+            );
             return { id: next.id };
           }
         }

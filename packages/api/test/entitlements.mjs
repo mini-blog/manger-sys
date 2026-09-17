@@ -7,6 +7,7 @@ import { verifyBookingCreate } from './booking-create.mjs';
 import { verifyStudentType } from './student-type.mjs';
 import { verifyBookingCancel } from './booking-cancel.mjs';
 import { verifyBookingRestore } from './booking-restore.mjs';
+import { verifyBookingMove } from './booking-move.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
 assert.equal(process.env.ENTITLEMENT_TEST_ISOLATED, 'true', 'Run pnpm test:entitlements.');
 assert.equal(new URL(process.env.DATABASE_URL).pathname, '/entitlement_test');
@@ -911,6 +912,21 @@ try {
     ensureFollowup,
   });
   await verifyBookingRestore({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    otherCourseId,
+    groupId,
+    now,
+    passed,
+    teaching: app.get(TeachingService),
+  });
+  await verifyBookingMove({
     db,
     req,
     ok,

@@ -148,3 +148,64 @@ export async function closeRebooking(
     },
   });
 }
+
+/** Follow only explicit booking links, never all tasks for the student/subject. */
+export async function moveRebookingLinks(
+  tx: Tx,
+  fromParticipantId: string,
+  toParticipantId: string,
+  now: Date,
+) {
+  const target = required(
+    await tx.sessionParticipant.findUnique({
+      where: { id: toParticipantId },
+      include: { student: true, session: true },
+    }),
+  );
+  const tasks = await tx.task.findMany({
+    where: {
+      type: 'TRIAL_FOLLOWUP',
+      purpose: 'REBOOKING',
+      OR: [
+        { status: 'OPEN', participantId: { in: [fromParticipantId, toParticipantId] } },
+        { status: 'DONE', reason: 'REBOOKED', rebookedToParticipantId: fromParticipantId },
+      ],
+    },
+    include: { participant: { include: { session: true } } },
+    orderBy: { id: 'asc' },
+  });
+  const changes = [];
+  for (const task of tasks) {
+    if (
+      !task.participant ||
+      task.sessionId !== task.participant.sessionId ||
+      task.assigneeId !== target.student.ownerAdminId ||
+      task.participant.studentId !== target.studentId ||
+      task.participant.session.courseId !== target.session.courseId ||
+      task.resolvedByEntitlementEntryId
+    )
+      fail('FOLLOWUP_DATA_INVALID', 'Follow-up ownership or source needs reconciliation.');
+    const updated =
+      task.status === 'OPEN'
+        ? await closeRebooking(tx, task.id, target.id, now)
+        : await tx.task.update({
+            where: { id: task.id },
+            // Preserve the original resolution, snapshot and communication history.
+            data: { rebookedToParticipantId: target.id, version: { increment: 1 } },
+          });
+    changes.push({
+      taskId: task.id,
+      before: {
+        status: task.status,
+        rebookedToParticipantId: task.rebookedToParticipantId,
+        version: task.version,
+      },
+      after: {
+        status: updated.status,
+        rebookedToParticipantId: updated.rebookedToParticipantId,
+        version: updated.version,
+      },
+    });
+  }
+  return changes;
+}
