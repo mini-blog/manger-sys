@@ -13,7 +13,8 @@
     "db:seed": "prisma db seed",
     "openapi:export": "node dist/openapi.js",
     "build:dev": "prisma generate && tsc -p tsconfig.dev.json",
-    "dev:container": "pnpm --filter @student/common build && pnpm build:dev && concurrently -k -n common,api \"pnpm --filter @student/common dev\" \"pnpm dev\""
+    "dev:container": "pnpm --filter @student/common build && pnpm build:dev && concurrently -k -n common,api \"pnpm --filter @student/common dev\" \"pnpm dev\"",
+    "accounts:bootstrap": "node dist/accounts/bootstrap-super-admin.js"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.3",

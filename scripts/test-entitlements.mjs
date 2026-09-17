@@ -61,10 +61,12 @@ try {
     SESSION_COOKIE_SECURE: 'false',
     SEED_PASSWORD: 'IsolatedTest2026!',
     QWEN_API_KEY: '',
+    ACCOUNT_COMMAND_HASH_SECRET: randomUUID() + randomUUID(),
   };
   run('pnpm', ['--filter', '@student/api...', 'build'], env);
   run('pnpm', ['db:migrate'], env);
   run(process.execPath, ['packages/api/test/entitlements.mjs'], env);
+  run(process.execPath, ['packages/api/test/accounts.mjs'], env);
   // Regression covers new booking rules and the remaining legacy lifecycle until cutover.
   run('pnpm', ['db:seed'], env);
   run(process.execPath, ['packages/api/test/integration.mjs'], env);

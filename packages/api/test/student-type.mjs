@@ -143,12 +143,11 @@ export async function verifyStudentType({
     await req(a, `/sessions/${target.id}/participants`, {
       studentId: empty.id,
       kind: 'REGULAR',
-      sourceRebookingTaskId: rebooking.id,
     }),
   );
   assert.equal(
     (await db.task.findUniqueOrThrow({ where: { id: rebooking.id } })).rebookedToParticipantId,
-    moved.id,
+    null,
   );
   // Member attending with trial credits is never treated as a trial student by feedback.
   const past = await db.classSession.create({

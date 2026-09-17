@@ -3,6 +3,8 @@ export const BUSINESS_TIMEZONE = 'Australia/Melbourne';
 export const SUPPORTED_LANGUAGES = ['en-AU', 'zh-CN'] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export const USER_ROLES = ['ADMIN', 'TEACHER'] as const;
+export const ACCOUNT_STATUSES = ['ACTIVE', 'DISABLED'] as const;
+export type AccountStatus = (typeof ACCOUNT_STATUSES)[number];
 export type UserRole = (typeof USER_ROLES)[number];
 export const STUDENT_TYPES = ['TRIAL', 'MEMBER'] as const;
 export type StudentType = (typeof STUDENT_TYPES)[number];
@@ -50,6 +52,7 @@ export const YEAR_LEVELS = [
 export type YearLevel = (typeof YEAR_LEVELS)[number];
 
 export interface UserIdentity {
+  isSuperAdmin: boolean;
   id: string;
   name: string;
   email: string;

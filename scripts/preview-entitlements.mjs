@@ -79,6 +79,7 @@ try {
     NODE_ENV: 'development',
     SESSION_COOKIE_SECURE: 'false',
     QWEN_API_KEY: '',
+    ACCOUNT_COMMAND_HASH_SECRET: randomUUID() + randomUUID(),
   };
   for (const args of [['--filter', '@student/api...', 'build'], ['db:migrate']]) {
     const r = spawnSync('pnpm', args, { cwd: root, env, stdio: 'inherit' });
@@ -91,6 +92,12 @@ try {
     stdio: 'inherit',
   });
   if (fixture.status !== 0) throw new Error('Preview fixture setup failed.');
+  const timetable = spawnSync(process.execPath, ['packages/api/test/seed-preview-timetable.mjs'], {
+    cwd: root,
+    env,
+    stdio: 'inherit',
+  });
+  if (timetable.status !== 0) throw new Error('Preview timetable setup failed.');
   const api = spawn(
     process.execPath,
     [

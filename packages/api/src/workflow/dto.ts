@@ -137,26 +137,24 @@ export class CreateSessionDto {
   @P() @text(1, 128) teacherId!: string;
   @P() @IsISO8601({ strict: true }) startsAt!: string;
   @P() @IsISO8601({ strict: true }) endsAt!: string;
-  @P() @IsInt() @Min(1) @Max(100) capacity!: number;
+  @O({
+    deprecated: true,
+    description:
+      'Legacy storage value, not a scheduling limit. Omission defaults to 1 on creation.',
+    minimum: 1,
+    maximum: 2147483647,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  capacity?: number;
 }
 export class UpdateSessionDto extends PartialType(CreateSessionDto) {
   @P() @IsInt() @Min(1) expectedVersion!: number;
   @P() @text(1, 500) reason!: string;
-  @P({ type: [String] })
-  @IsArray()
-  @ArrayMaxSize(100)
-  @ArrayUnique()
-  @IsString({ each: true })
-  confirmedAffectedParticipantIds!: string[];
 }
-export class CancelSessionDto extends VersionDto {
-  @P({ type: [String] })
-  @IsArray()
-  @ArrayMaxSize(100)
-  @ArrayUnique()
-  @IsString({ each: true })
-  confirmedAffectedParticipantIds!: string[];
-}
+export class CancelSessionDto extends VersionDto {}
 export class AddParticipantDto {
   @P() @text(1, 128) studentId!: string;
   @P({
@@ -166,13 +164,6 @@ export class AddParticipantDto {
   })
   @IsIn(PARTICIPANT_KINDS)
   kind!: ParticipantKind;
-  @O({
-    description:
-      'Optional open rebooking task for this student and subject, independent of the funding card.',
-  })
-  @IsOptional()
-  @text(1, 128)
-  sourceRebookingTaskId?: string;
 }
 export class MoveParticipantDto extends VersionDto {
   @P() @text(1, 128) targetSessionId!: string;

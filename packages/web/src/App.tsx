@@ -1,3 +1,4 @@
+import { Accounts } from './pages/Accounts';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Protected } from './auth';
 import { Layout } from './components/Layout';
@@ -25,6 +26,7 @@ export function App() {
         <Route path="students/:id" element={<StudentDetail />} />
         <Route path="students" element={<Students />} />
         <Route path="entitlements" element={<Entitlements />} />
+        <Route path="accounts" element={<Accounts />} />
         <Route path="timetable" element={<Timetable />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

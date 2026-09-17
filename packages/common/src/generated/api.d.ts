@@ -4,6 +4,86 @@
  */
 
 export interface paths {
+    "/api/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AccountsController_list"];
+        put?: never;
+        post: operations["AccountsController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AccountsController_detail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["AccountsController_update"];
+        trace?: never;
+    };
+    "/api/accounts/{id}/deactivation-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AccountsController_impact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["AccountsController_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/accounts/{id}/deactivate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["AccountsController_deactivate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -456,6 +536,74 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccountDto: {
+            id: string;
+            name: string;
+            email: string;
+            /** @enum {string} */
+            role: "ADMIN" | "TEACHER";
+            /** @enum {string} */
+            status: "ACTIVE" | "DISABLED";
+            isSuperAdmin: boolean;
+            version: number;
+            /** Format: date-time */
+            disabledAt: string | null;
+        };
+        AccountPageDto: {
+            items: components["schemas"]["AccountDto"][];
+            total: number;
+            page: number;
+            pageSize: number;
+        };
+        BlockingLessonDto: {
+            id: string;
+            className: string;
+            courseName: string;
+            /** Format: date-time */
+            startsAt: string;
+        };
+        DeactivationImpactDto: {
+            expectedVersion: number;
+            ownedStudentCount: number;
+            openFollowupCount: number;
+            blockingSessions: components["schemas"]["BlockingLessonDto"][];
+            canDeactivate: boolean;
+            eligibleSuccessors: components["schemas"]["AccountDto"][];
+            blockedReason: string | null;
+        };
+        CreateAccountDto: {
+            name: string;
+            email: string;
+            /** @enum {string} */
+            role: "ADMIN" | "TEACHER";
+            password: string;
+        };
+        AccountActionDto: {
+            id: string;
+            version: number;
+        };
+        UpdateAccountDto: {
+            name?: string;
+            email?: string;
+            expectedVersion: number;
+        };
+        ResetPasswordDto: {
+            password: string;
+            expectedVersion: number;
+        };
+        DeactivateAccountDto: {
+            expectedVersion: number;
+            reason: string;
+            successorAdminId?: string;
+        };
+        DeactivationResultDto: {
+            id: string;
+            version: number;
+            /** @enum {string} */
+            status: "ACTIVE" | "DISABLED";
+            transferredStudentCount: number;
+            transferredTaskCount: number;
+        };
         HealthDto: {
             status: string;
             timezone: string;
@@ -467,6 +615,7 @@ export interface components {
             password: string;
         };
         UserDto: {
+            isSuperAdmin: boolean;
             id: string;
             name: string;
             email: string;
@@ -688,7 +837,11 @@ export interface components {
             teacherId: string;
             startsAt: string;
             endsAt: string;
-            capacity: number;
+            /**
+             * @deprecated
+             * @description Legacy storage value, not a scheduling limit. Omission defaults to 1 on creation.
+             */
+            capacity?: number;
         };
         UpdateSessionDto: {
             classGroupId?: string;
@@ -696,15 +849,17 @@ export interface components {
             teacherId?: string;
             startsAt?: string;
             endsAt?: string;
+            /**
+             * @deprecated
+             * @description Legacy storage value, not a scheduling limit. Omission defaults to 1 on creation.
+             */
             capacity?: number;
             expectedVersion: number;
             reason: string;
-            confirmedAffectedParticipantIds: string[];
         };
         CancelSessionDto: {
             expectedVersion: number;
             reason: string;
-            confirmedAffectedParticipantIds: string[];
         };
         ParticipantDto: {
             id: string;
@@ -749,8 +904,6 @@ export interface components {
              * @enum {string}
              */
             kind: "TRIAL" | "REGULAR";
-            /** @description Optional open rebooking task for this student and subject, independent of the funding card. */
-            sourceRebookingTaskId?: string;
         };
         VersionDto: {
             expectedVersion: number;
@@ -1005,6 +1158,183 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    AccountsController_list: {
+        parameters: {
+            query?: {
+                q?: string;
+                role?: "ADMIN" | "TEACHER";
+                status?: "ACTIVE" | "DISABLED";
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountPageDto"];
+                };
+            };
+        };
+    };
+    AccountsController_create: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description UUID retained when retrying identical input. */
+                "idempotency-key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAccountDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountActionDto"];
+                };
+            };
+        };
+    };
+    AccountsController_detail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDto"];
+                };
+            };
+        };
+    };
+    AccountsController_update: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description UUID retained when retrying identical input. */
+                "idempotency-key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAccountDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountActionDto"];
+                };
+            };
+        };
+    };
+    AccountsController_impact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeactivationImpactDto"];
+                };
+            };
+        };
+    };
+    AccountsController_reset: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description UUID retained when retrying identical input. */
+                "idempotency-key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountActionDto"];
+                };
+            };
+        };
+    };
+    AccountsController_deactivate: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description UUID retained when retrying identical input. */
+                "idempotency-key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeactivateAccountDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeactivationResultDto"];
+                };
+            };
+        };
+    };
     HealthController_health: {
         parameters: {
             query?: never;

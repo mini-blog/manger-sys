@@ -17,12 +17,14 @@ export function useWrite<M extends Method, P extends WritePath<M>>(
   path: P,
   ids: Record<string, string> = {},
   onSuccess?: (result: { id: string }) => void,
-  onError?: () => void,
+  onError?: (error: Error) => void | Promise<void>,
 ) {
   const { auth, refresh } = useAuth();
   const client = useQueryClient();
   const attempt = useRef<{ payload: string; key: string } | null>(null);
   return useMutation({
+    // Do not retain submitted credentials or other private form values after unmount.
+    gcTime: 0,
     mutationFn: async (body: Body<P, M>) => {
       const url = Object.entries(ids).reduce(
         (url, [key, value]) => url.replace(`{${key}}`, encodeURIComponent(value)),
@@ -43,7 +45,7 @@ export function useWrite<M extends Method, P extends WritePath<M>>(
       });
       const data = await response.json();
       if (response.status === 401) refresh(null);
-      if (!response.ok) throw apiError(data);
+      if (!response.ok) throw apiError(data, undefined, response.status);
       return data as { id: string };
     },
     onError,

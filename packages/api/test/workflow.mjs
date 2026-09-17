@@ -163,35 +163,10 @@ try {
       req(a, `/sessions/${target.id}/participants`, { studentId: s.id, kind: 'TRIAL' }),
     ),
   );
-  assert.deepEqual(concurrent.map((x) => x.status).sort(), [201, 409]);
-  assert.equal(
-    (
-      await req(a, `/participants/${first.id}/move`, {
-        expectedVersion: 1,
-        reason: 'Full target',
-        targetSessionId: target.id,
-      })
-    ).status,
-    409,
-  );
+  assert.deepEqual(concurrent.map((x) => x.status).sort(), [201, 201]);
   assert.equal((await roster(a, l)).participants.length, 3);
-  assert.equal((await roster(a, target)).participants.length, 1);
-  check('concurrent last seat and failed move preserve original roster', () => {});
-  assert.equal(
-    (
-      await req(a, `/participants/${first.id}/move`, {
-        expectedVersion: 1,
-        reason: 'Wrong subject',
-        targetSessionId: other.id,
-      })
-    ).status,
-    409,
-  );
-  const teachTask = await db.task.findFirst({
-    where: { sessionId: l.id, type: 'LESSON_FEEDBACK' },
-  });
-  assert.equal((await req(t, `/tasks/${teachTask.id}`)).status, 403);
-  assert.equal((await req(a, `/tasks/${teachTask.id}`)).status, 403);
+  assert.equal((await roster(a, target)).participants.length, 2);
+  check('concurrent bookings are not blocked by legacy capacity', () => {});
   let r = await roster(t, l);
   const feedback = {
     expectedVersion: r.lesson.version,
@@ -225,8 +200,14 @@ try {
   ]))
     ok(response);
   assert.equal(await db.task.count({ where: { sessionId: l.id, type: 'TRIAL_FOLLOWUP' } }), 2);
+  const teachTask = await db.task.findFirst({
+    where: { sessionId: l.id, type: 'LESSON_FEEDBACK' },
+  });
   assert.equal((await task(t, teachTask.id)).status, 'DONE');
-  const ta = await db.task.findFirst({ where: { participantId: first.id } }),
+  assert.equal((await req(a, `/tasks/${teachTask.id}`)).status, 403);
+  const ta = await db.task.findFirst({
+      where: { participantId: first.id, type: 'TRIAL_FOLLOWUP' },
+    }),
     tb = await db.task.findFirst({ where: { sessionId: l.id, assigneeId: b.user.id } });
   assert.equal((await req(b, `/tasks/${ta.id}`)).status, 403);
   assert.equal((await req(a, `/tasks/${tb.id}`)).status, 403);
@@ -310,7 +291,7 @@ try {
   );
   assert.equal((await req(a, `/students/${s.id}`)).data.firstEnrolledOn, '2028-09-06');
   check('follow-up logs, manual enrolment, idempotency and independent communication', () => {});
-  // Future source cancellation, restore and transfer must reuse/close the prior follow-up.
+  // Changing a student's lesson uses independent remove/add commands.
   const u = await student(a, 'Rebooking');
   const src = await lesson(a, '18'),
     dest = await lesson(a, '20');
@@ -321,24 +302,24 @@ try {
       reason: 'Family unavailable',
     }),
   );
-  let ct = await db.task.findFirst({ where: { participantId: p.id } });
-  assert.equal(ct.reason, 'CANCELLED');
-  ok(
-    await req(a, `/participants/${p.id}/restore`, { expectedVersion: 2, reason: 'Time confirmed' }),
+  const hidden = await db.task.findFirst({
+    where: { participantId: p.id, type: 'TRIAL_FEEDBACK' },
+  });
+  assert.equal(hidden.status, 'CANCELLED');
+  assert.equal(await db.task.count({ where: { participantId: p.id, type: 'TRIAL_FOLLOWUP' } }), 0);
+  assert.equal(
+    ok(await req(a, `/sessions/${src.id}/participants`, { studentId: u.id, kind: 'TRIAL' })).id,
+    p.id,
   );
-  assert.equal((await task(a, ct.id)).status, 'DONE');
-  p = ok(
-    await req(a, `/participants/${p.id}/move`, {
+  ok(
+    await req(a, `/participants/${p.id}/cancel`, {
       expectedVersion: 3,
       reason: 'Change requested',
-      targetSessionId: dest.id,
     }),
   );
+  p = ok(await req(a, `/sessions/${dest.id}/participants`, { studentId: u.id, kind: 'TRIAL' }));
   assert.equal((await roster(a, src)).participants.length, 0);
   assert.equal((await roster(a, dest)).participants.length, 1);
-  const destTask = await db.task.findFirst({
-    where: { sessionId: dest.id, type: 'LESSON_FEEDBACK' },
-  });
   r = await roster(a, dest);
   ok(
     await req(
@@ -348,13 +329,12 @@ try {
         expectedVersion: r.lesson.version,
         reason: 'Substitute teacher',
         teacherId: userIds[3],
-        confirmedAffectedParticipantIds: [p.id],
       },
       'PATCH',
     ),
     200,
   );
-  assert.equal((await db.task.findUnique({ where: { id: destTask.id } })).assigneeId, userIds[3]);
+  assert.equal((await req(t, `/sessions/${dest.id}/participants`)).status, 403);
   now = new Date('2028-09-04T11:01:00Z');
   r = await roster(t2, dest);
   ok(
@@ -367,8 +347,11 @@ try {
     (await req(a, `/students/${u.id}/trial-eligibility?courseId=${courseIds[0]}`)).data.available,
     1,
   );
-  assert.equal((await db.task.findFirst({ where: { participantId: p.id } })).reason, 'NO_SHOW');
-  check('cancel/restore/move, teacher task reassignment and no-show eligibility', () => {});
+  assert.equal(
+    (await db.task.findFirst({ where: { participantId: p.id, type: 'TRIAL_FOLLOWUP' } })).reason,
+    'NO_SHOW',
+  );
+  check('remove/re-add, teacher reassignment and legacy no-show feedback', () => {});
   // Further object-level and scheduling boundaries use tomorrow's isolated lessons.
   const tomorrow = await lesson(a, '12', {
     startsAt: '2028-09-05T12:00:00+10:00',
@@ -443,10 +426,7 @@ try {
     ).status,
     400,
   );
-  check(
-    'teacher/class/student conflicts, enrolment rules, filtered scope and null rejection',
-    () => {},
-  );
+  check('teacher/student conflicts, enrolment rules, filtered scope and null rejection', () => {});
   r = await roster(a, tomorrow);
   assert.equal(
     (
@@ -455,9 +435,8 @@ try {
         `/sessions/${tomorrow.id}`,
         {
           expectedVersion: r.lesson.version,
-          reason: 'Wrong confirmation',
+          reason: 'Conflicting teacher',
           teacherId: userIds[3],
-          confirmedAffectedParticipantIds: [],
         },
         'PATCH',
       )
@@ -467,16 +446,13 @@ try {
   const cancelBody = {
     expectedVersion: r.lesson.version,
     reason: 'Lesson cancelled',
-    confirmedAffectedParticipantIds: [tomorrowP.id],
   };
   ok(await req(a, `/sessions/${tomorrow.id}/cancel`, cancelBody));
+  assert.equal(await db.task.count({ where: { sessionId: tomorrow.id, status: 'OPEN' } }), 0);
   assert.equal(
-    (await db.task.findFirst({ where: { sessionId: tomorrow.id, type: 'LESSON_FEEDBACK' } }))
-      .status,
+    (await db.sessionParticipant.findUnique({ where: { id: tomorrowP.id } })).bookingStatus,
     'CANCELLED',
   );
-  const cancelledFollow = await db.task.findFirst({ where: { participantId: tomorrowP.id } });
-  assert.equal(cancelledFollow.reason, 'CANCELLED');
   assert.equal(
     (
       await req(a, `/participants/${tomorrowP.id}/restore`, {
@@ -495,7 +471,10 @@ try {
     }),
   );
   assert.equal((await task(a, ta.id)).status, 'OPEN');
-  check('affected-list confirmation, lesson cancellation and explicit follow-up reopen', () => {});
+  check(
+    'teacher conflict, lesson cancellation without follow-ups and explicit follow-up reopen',
+    () => {},
+  );
   for (let i = 0; i < 5; i++)
     ok(await req(a, `/tasks/${ta.id}/suggestions`, { channel: 'PHONE', language: 'en-AU' }));
   assert.equal(

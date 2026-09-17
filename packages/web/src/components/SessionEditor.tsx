@@ -1,231 +1,297 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Alert,
   Box,
   Button,
-  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControlLabel,
   MenuItem,
   Stack,
   TextField,
   Typography,
 } from '@mui/material';
 import { DateTime } from 'luxon';
-import { api, apiError } from '../api/client';
+import { api, apiError, ApiError } from '../api/client';
+import { useAuth } from '../auth';
 import { useWrite } from '../hooks/useWrite';
-import { ZONE, type Lesson } from '../lib/time';
+import { useLessonEditable } from '../hooks/useLessonEditable';
+import { ZONE, local, type Lesson } from '../lib/time';
 import { Status, toInstant, wall } from './FormParts';
-export function SessionEditor({
-  lesson: initialLesson,
-  participantIds: initialIds = [],
-  participantNames: initialNames = [],
-  close,
-}: {
-  lesson?: Lesson;
-  participantIds?: string[];
-  participantNames?: string[];
-  close: () => void;
-}) {
-  const [lesson, setLesson] = useState(initialLesson);
-  const [participantIds, setIds] = useState(initialIds);
-  const [participantNames, setNames] = useState(initialNames);
-  const [form, setForm] = useState({
+
+const lessonFields = (lesson?: Lesson) => {
+  const tomorrow = DateTime.now().setZone(ZONE).plus({ days: 1 }).set({ hour: 16, minute: 0 });
+  return {
     classGroupId: lesson?.classGroupId ?? '',
     courseId: lesson?.courseId ?? '',
     teacherId: lesson?.teacherId ?? '',
-    startsAt: lesson
-      ? wall(lesson.startsAt)
-      : DateTime.now()
-          .setZone(ZONE)
-          .plus({ days: 1 })
-          .set({ hour: 16, minute: 0 })
-          .toFormat("yyyy-MM-dd'T'HH:mm"),
+    startsAt: lesson ? wall(lesson.startsAt) : tomorrow.toFormat("yyyy-MM-dd'T'HH:mm"),
     endsAt: lesson
       ? wall(lesson.endsAt)
-      : DateTime.now()
-          .setZone(ZONE)
-          .plus({ days: 1 })
-          .set({ hour: 17, minute: 0 })
-          .toFormat("yyyy-MM-dd'T'HH:mm"),
-    capacity: lesson?.capacity ?? 8,
-    reason: '',
-  });
-  const [confirmed, setConfirmed] = useState(false),
-    [error, setError] = useState('');
-  const query = useQuery({
-    queryKey: ['session-options'],
+      : tomorrow.plus({ hours: 1 }).toFormat("yyyy-MM-dd'T'HH:mm"),
+  };
+};
+type Fields = ReturnType<typeof lessonFields>;
+
+export function SessionEditor({
+  lesson: initialLesson,
+  mode = 'edit',
+  close,
+}: {
+  lesson?: Lesson;
+  mode?: 'edit' | 'cancel';
+  close: () => void;
+}) {
+  const { auth, refresh } = useAuth();
+  const client = useQueryClient();
+  const [lesson, setLesson] = useState(initialLesson);
+  const [form, setForm] = useState(() => lessonFields(initialLesson));
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState('');
+  const [refreshError, setRefreshError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [recordedResult, setRecordedResult] = useState(false);
+  const editable = useLessonEditable(lesson) && !recordedResult;
+  const cancelling = mode === 'cancel';
+  const options = useQuery({
+    queryKey: ['session-options', auth?.user.id],
+    enabled: auth?.user.role === 'ADMIN' && !cancelling,
     queryFn: async () => {
-      const { data, error } = await api.GET('/api/sessions/options');
+      const { data, error, response } = await api.GET('/api/sessions/options');
+      if (response.status === 401) refresh(null);
       if (!data) throw apiError(error);
       return data;
     },
   });
+  // Refresh the version after a conflict, preserving only the fields the user changed.
+  // Unedited fields follow the latest server state and are never overwritten by stale inputs.
+  const reloadLesson = async () => {
+    if (!lesson) return;
+    setRefreshing(true);
+    setRefreshError('');
+    try {
+      const { data, error, response } = await api.GET('/api/sessions/{id}/participants', {
+        params: { path: { id: lesson.id } },
+      });
+      if (response.status === 401) refresh(null);
+      if (!data) throw apiError(error);
+      const before = lessonFields(lesson);
+      const latest = lessonFields(data.lesson);
+      setForm(
+        (draft) =>
+          Object.fromEntries(
+            Object.keys(latest).map((name) => {
+              const key = name as keyof Fields;
+              return [key, draft[key] !== before[key] ? draft[key] : latest[key]];
+            }),
+          ) as Fields,
+      );
+      if (data.lesson.version !== lesson.version)
+        setError('Lesson updated elsewhere. Your changes are kept; review and save again.');
+      setLesson(data.lesson);
+      setRecordedResult(
+        data.participants.some((p) => p.attendance !== 'PENDING' || p.feedbackSubmittedAt),
+      );
+      client.setQueryData(['roster', auth?.user.id, lesson.id], data);
+    } catch (e) {
+      setRefreshError((e as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  const onError = async (e: Error) => {
+    if (e instanceof ApiError && e.status === 409) await reloadLesson();
+  };
   const create = useWrite('post', '/api/sessions', {}, close);
-  const edit = useWrite('patch', '/api/sessions/{id}', { id: lesson?.id ?? '' }, close);
-  const cancel = useWrite('post', '/api/sessions/{id}/cancel', { id: lesson?.id ?? '' }, close);
-  const pending = create.isPending || edit.isPending || cancel.isPending;
+  const edit = useWrite('patch', '/api/sessions/{id}', { id: lesson?.id ?? '' }, close, onError);
+  const cancel = useWrite(
+    'post',
+    '/api/sessions/{id}/cancel',
+    { id: lesson?.id ?? '' },
+    close,
+    onError,
+  );
+  const command = cancelling ? cancel : lesson ? edit : create;
+  const busy = command.isPending || refreshing;
+  const noOptions =
+    options.data &&
+    (!options.data.classes.length || !options.data.courses.length || !options.data.teachers.length);
+  const disabled =
+    busy ||
+    Boolean(lesson && !editable) ||
+    Boolean(refreshError) ||
+    (!cancelling &&
+      (!options.data ||
+        options.isError ||
+        noOptions ||
+        Object.values(form).some((value) => !value)));
+  if (auth?.user.role !== 'ADMIN') return null;
   return (
-    <Dialog open onClose={() => !pending && close()} fullWidth maxWidth="sm">
+    <Dialog
+      open
+      onClose={() => !busy && close()}
+      fullWidth
+      maxWidth="sm"
+      aria-labelledby="session-editor-title"
+    >
       <Box
         component="form"
         onSubmit={(e) => {
           e.preventDefault();
+          if (disabled) return;
+          setError('');
+          if (lesson && new Date(lesson.startsAt).getTime() <= Date.now()) {
+            setError('This lesson has started and can no longer be changed.');
+            void reloadLesson();
+            return;
+          }
+          if (cancelling && lesson) {
+            cancel.mutate({ expectedVersion: lesson.version, reason: reason.trim() });
+            return;
+          }
           try {
-            setError('');
-            const { reason, ...f } = form;
             const data = {
-              ...f,
+              ...form,
               startsAt: toInstant(form.startsAt),
               endsAt: toInstant(form.endsAt),
             };
-            if (lesson)
-              edit.mutate({
-                ...data,
-                reason,
-                expectedVersion: lesson.version,
-                confirmedAffectedParticipantIds: participantIds,
-              });
-            else create.mutate(data);
+            if (
+              new Date(data.startsAt) <= new Date() ||
+              new Date(data.endsAt) <= new Date(data.startsAt)
+            )
+              throw new Error('Choose a future start time and an end time after it.');
+            if (lesson) {
+              const baseline = lessonFields(lesson);
+              const changed = Object.fromEntries(
+                Object.entries(data).filter(
+                  ([key]) => form[key as keyof Fields] !== baseline[key as keyof Fields],
+                ),
+              );
+              edit.mutate({ ...changed, expectedVersion: lesson.version, reason: reason.trim() });
+            } else create.mutate(data);
           } catch (e) {
             setError((e as Error).message);
           }
         }}
       >
-        <DialogTitle>{lesson ? 'Edit lesson' : 'Schedule lesson'}</DialogTitle>
+        <DialogTitle id="session-editor-title">
+          {cancelling ? 'Cancel lesson' : lesson ? 'Edit lesson' : 'Schedule lesson'}
+        </DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ pt: 1 }}>
-            <Status query={query} />
-            {(error || create.error || edit.error || cancel.error) && (
-              <Alert severity="error">
-                {error || create.error?.message || edit.error?.message || cancel.error?.message}
+            {(error || command.error) && (
+              <Alert severity="error">{error || command.error?.message}</Alert>
+            )}
+            {refreshError && (
+              <Alert
+                severity="error"
+                action={
+                  <Button onClick={() => void reloadLesson()} disabled={busy}>
+                    Retry
+                  </Button>
+                }
+              >
+                Could not refresh the lesson: {refreshError}
               </Alert>
             )}
-            {lesson && (edit.isError || cancel.isError) && (
-              <Button
-                onClick={async () => {
-                  const { data, error } = await api.GET('/api/sessions/{id}/participants', {
-                    params: { path: { id: lesson.id } },
-                  });
-                  if (!data) {
-                    setError(apiError(error).message);
-                    return;
-                  }
-                  setLesson(data.lesson);
-                  setIds(data.participants.map((p) => p.participantId));
-                  setNames(data.participants.map((p) => p.name));
-                  setConfirmed(false);
-                  edit.reset();
-                  cancel.reset();
-                }}
-              >
-                Reload affected students
-              </Button>
+            {lesson && !editable && (
+              <Typography role="status" color="text.secondary">
+                This lesson is cancelled, has started or has recorded results. It is read-only.
+              </Typography>
             )}
-            {query.data &&
-              (['classGroupId', 'courseId', 'teacherId'] as const).map((key, i) => (
-                <TextField
-                  key={key}
-                  select
-                  required
-                  label={['Class', 'Subject', 'Teacher'][i]}
-                  value={form[key]}
-                  disabled={Boolean(lesson && participantIds.length && key !== 'teacherId')}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                >
-                  {[query.data!.classes, query.data!.courses, query.data!.teachers][i].map((o) => (
-                    <MenuItem key={o.id} value={o.id}>
-                      {o.name}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              ))}
-            <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
-              {(['startsAt', 'endsAt'] as const).map((key, i) => (
-                <TextField
-                  key={key}
-                  label={`${i ? 'End' : 'Start'} · Melbourne`}
-                  type="datetime-local"
-                  required
-                  value={form[key]}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-                  slotProps={{ inputLabel: { shrink: true } }}
-                  fullWidth
-                />
-              ))}
-            </Stack>
-            <TextField
-              label="Capacity"
-              type="number"
-              required
-              value={form.capacity}
-              onChange={(e) => setForm({ ...form, capacity: Number(e.target.value) })}
-              slotProps={{ htmlInput: { min: 1, max: 100 } }}
-            />
-            {lesson && (
+            {cancelling && lesson ? (
               <>
-                <TextField
-                  label="Reason for change"
-                  required
-                  value={form.reason}
-                  onChange={(e) => setForm({ ...form, reason: e.target.value })}
-                  slotProps={{ htmlInput: { maxLength: 500 } }}
-                />
+                <Typography fontWeight={600}>
+                  {lesson.className} · {lesson.courseName}
+                </Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Current: {lesson.teacherName} · {wall(lesson.startsAt).replace('T', ' ')} –{' '}
-                  {wall(lesson.endsAt).slice(-5)}
+                  {lesson.teacherName} · {local(lesson.startsAt).toFormat('d LLL yyyy HH:mm')}–
+                  {local(lesson.endsAt).toFormat('HH:mm')} · Melbourne
                 </Typography>
-                <Typography variant="body2">
-                  Affected students: {participantNames.join(', ') || 'None'}
+                <Typography>
+                  Cancel this lesson for all {lesson.participantCount} students?
                 </Typography>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={confirmed}
-                      onChange={(e) => setConfirmed(e.target.checked)}
+              </>
+            ) : (
+              <>
+                <Status query={options} />
+                {noOptions && (
+                  <Typography color="text.secondary">
+                    A class, subject and teacher are needed to schedule a lesson.
+                  </Typography>
+                )}
+                {options.data &&
+                  (['classGroupId', 'courseId', 'teacherId'] as const).map((key, i) => (
+                    <TextField
+                      key={key}
+                      select
+                      required
+                      label={['Class', 'Subject', 'Teacher'][i]}
+                      value={form[key]}
+                      disabled={busy || Boolean(lesson && !editable)}
+                      onChange={(e) =>
+                        setForm((current) => ({ ...current, [key]: e.target.value }))
+                      }
+                    >
+                      {[options.data.classes, options.data.courses, options.data.teachers][i].map(
+                        (o) => (
+                          <MenuItem key={o.id} value={o.id}>
+                            {o.name}
+                          </MenuItem>
+                        ),
+                      )}
+                    </TextField>
+                  ))}
+                <Stack direction="row" gap={2}>
+                  {(['startsAt', 'endsAt'] as const).map((key, i) => (
+                    <TextField
+                      key={key}
+                      label={`${i ? 'End' : 'Start'} · Melbourne`}
+                      type="datetime-local"
+                      required
+                      fullWidth
+                      value={form[key]}
+                      disabled={busy || Boolean(lesson && !editable)}
+                      onChange={(e) =>
+                        setForm((current) => ({ ...current, [key]: e.target.value }))
+                      }
+                      slotProps={{ inputLabel: { shrink: true } }}
                     />
-                  }
-                  label={`I have reviewed the impact on all ${participantIds.length} booked students.`}
-                />
-                {cancel.isError && (
-                  <Typography color="error">Cancellation was not saved.</Typography>
+                  ))}
+                </Stack>
+                {lesson && (
+                  <Typography variant="body2" color="text.secondary">
+                    Changes apply to every student in this lesson.
+                  </Typography>
                 )}
               </>
             )}
+            {lesson && (
+              <TextField
+                label={cancelling ? 'Cancellation reason' : 'Reason for change'}
+                required
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                disabled={busy || !editable}
+                slotProps={{ htmlInput: { maxLength: 500 } }}
+              />
+            )}
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'space-between' }}>
-          {lesson && (
-            <Button
-              color="error"
-              disabled={pending || !confirmed || !form.reason.trim()}
-              onClick={() =>
-                cancel.mutate({
-                  expectedVersion: lesson.version,
-                  reason: form.reason,
-                  confirmedAffectedParticipantIds: participantIds,
-                })
-              }
-            >
-              Cancel lesson
-            </Button>
-          )}
-          <Stack direction="row" gap={1} sx={{ ml: 'auto' }}>
-            <Button disabled={pending} onClick={close}>
-              Close
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={pending || Boolean(lesson && !confirmed)}
-            >
-              Save lesson
-            </Button>
-          </Stack>
+        <DialogActions>
+          <Button disabled={busy} onClick={close}>
+            {cancelling ? 'Keep lesson' : 'Close'}
+          </Button>
+          <Button
+            type="submit"
+            variant="contained"
+            color={cancelling ? 'error' : 'primary'}
+            disabled={disabled || Boolean(lesson && !reason.trim())}
+          >
+            {busy ? 'Saving…' : cancelling ? 'Cancel lesson' : 'Save lesson'}
+          </Button>
         </DialogActions>
       </Box>
     </Dialog>

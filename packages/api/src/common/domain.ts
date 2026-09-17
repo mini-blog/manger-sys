@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DateTime } from 'luxon';
@@ -105,13 +106,14 @@ export class Commands {
     body: unknown,
     authorize: (tx: Tx) => Promise<void>,
     action: (tx: Tx) => Promise<T>,
+    fingerprint?: (value: unknown) => string,
   ): Promise<T> {
     if (
       !key ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(key)
     )
       bad('Idempotency-Key must be a UUID.');
-    const requestHash = digest({ operation, body });
+    const requestHash = (fingerprint ?? digest)({ operation, body });
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         return await this.db.$transaction(
@@ -119,6 +121,12 @@ export class Commands {
             // One short business-write lane at this scale; all mutations participate.
             // Serializable retries protect snapshots acquired while waiting for the lock.
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(73192461)`;
+            // Lock the actor row too: if it changed while this serializable snapshot
+            // waited for the business lock, PostgreSQL aborts it and we retry fresh.
+            await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${user.id} FOR SHARE`;
+            const actor = await tx.user.findUnique({ where: { id: user.id } });
+            if (!actor || actor.status !== 'ACTIVE')
+              throw new UnauthorizedException('Account is not active.');
             await authorize(tx);
             const prior = await tx.mutationReceipt.findUnique({
               where: { userId_operation_key: { userId: user.id, operation, key } },
@@ -142,7 +150,11 @@ export class Commands {
       } catch (error) {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
-          ['P2034', 'P2002'].includes(error.code)
+          (['P2034', 'P2002'].includes(error.code) ||
+            (error.code === 'P2010' &&
+              (error.meta?.code === '40001' ||
+                (error.meta?.driverAdapterError as { cause?: { kind?: string } } | undefined)?.cause
+                  ?.kind === 'TransactionWriteConflict')))
         ) {
           if (attempt < 2) continue;
           fail('RETRY_CONFLICT', 'Another change was made at the same time. Please retry.');

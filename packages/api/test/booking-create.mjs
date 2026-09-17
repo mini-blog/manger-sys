@@ -131,147 +131,58 @@ export async function verifyBookingCreate({
   );
 
   const guarded = await enrol(),
-    target = await lesson();
-  const key = randomUUID();
-  const first = ok(await book(guarded, target, {}, a, key));
+    target = await lesson({ capacity: 1 });
+  const key = randomUUID(),
+    first = ok(await book(guarded, target, {}, a, key));
   assert.deepEqual(ok(await book(guarded, target, {}, a, key)), first);
   code(await book(guarded, target, { kind: 'REGULAR' }, a, key), 'IDEMPOTENCY_CONFLICT');
   code(await book(guarded, target), 'ALREADY_BOOKED');
-  await db.sessionParticipant.update({
-    where: { id: first.id },
-    data: { bookingStatus: 'CANCELLED' },
-  });
-  const cancelled = await book(guarded, target, { kind: 'REGULAR' });
-  code(cancelled, 'ALREADY_BOOKED');
-  assert.match(cancelled.data.message, /Restore/);
-  assert.equal(
-    (await db.sessionParticipant.findUniqueOrThrow({ where: { id: first.id } })).kind,
-    'TRIAL',
-  );
-  const noContact = await student(a, { guardianName: 'Parent without contact' });
-  assert.equal((await book(noContact, await lesson())).status, 400);
+  const noContact = await student(a, {});
+  ok(await book(noContact, target)); // Over capacity and missing contact are permitted.
   assert.equal((await book(guarded, await lesson(), {}, b)).status, 403);
   assert.equal((await book(guarded, await lesson(), {}, t)).status, 403);
   code(await book(guarded, await lesson({ status: 'CANCELLED' })), 'SESSION_STARTED');
   code(await book(guarded, historical), 'SESSION_STARTED');
-  const full = await lesson({ capacity: 1 });
-  ok(await book(guarded, full));
-  code(await book(await enrol(), full), 'SESSION_FULL');
-  await grant(guarded, 'TRIAL', 1);
+  await grant(guarded, 'TRIAL', 2);
   code(
     await book(
       guarded,
-      await lesson({ courseId: otherCourseId, startsAt: full.startsAt, endsAt: full.endsAt }),
+      await lesson({ courseId: otherCourseId, startsAt: target.startsAt, endsAt: target.endsAt }),
     ),
     'STUDENT_CONFLICT',
   );
   ok(
     await book(
       guarded,
-      await lesson({ startsAt: full.endsAt, endsAt: new Date(full.endsAt.getTime() + 3600000) }),
+      await lesson({
+        startsAt: target.endsAt,
+        endsAt: new Date(target.endsAt.getTime() + 3600000),
+      }),
     ),
   );
-  passed(
-    'booking: permissions, contact, capacity, future lessons, overlap, cancelled records and idempotency enforced',
-  );
-
-  const followStudent = await enrol();
-  await grant(followStudent, 'TRIAL', 8);
-  async function follow(s = followStudent, owner = a, purpose = 'REBOOKING', subject = courseId) {
-    const l = await lesson({ courseId: subject });
-    const p = await db.sessionParticipant.create({
-      data: { sessionId: l.id, studentId: s.id, kind: 'TRIAL', bookingStatus: 'CANCELLED' },
-    });
-    const task = await write(owner, (tx) => ensureFollowup(tx, p.id, 'CANCELLED', now()));
-    if (purpose !== 'REBOOKING')
-      return db.task.update({ where: { id: task.id }, data: { purpose } });
-    return task;
-  }
-  const source = await follow(),
-    independent = await follow(),
-    sales = await follow(followStudent, a, 'FIRST_PURCHASE');
-  ok(await book(followStudent, await lesson()));
-  for (const task of [source, independent, sales])
-    assert.equal((await db.task.findUniqueOrThrow({ where: { id: task.id } })).status, 'OPEN');
-  const linkedLesson = await lesson(),
-    linkedKey = randomUUID();
-  const linked = ok(
-    await book(followStudent, linkedLesson, { sourceRebookingTaskId: source.id }, a, linkedKey),
-  );
-  const closed = await db.task.findUniqueOrThrow({ where: { id: source.id } });
-  assert.equal(closed.status, 'DONE');
-  assert.equal(closed.reason, 'REBOOKED');
-  assert.equal(closed.rebookedToParticipantId, linked.id);
-  const log = await db.scheduleChange.findFirstOrThrow({
-    where: { participantId: linked.id, action: 'ADD_STUDENT' },
-  });
-  assert.equal(log.after.sourceRebookingTaskId, source.id);
-  assert.deepEqual(
-    ok(await book(followStudent, linkedLesson, { sourceRebookingTaskId: source.id }, a, linkedKey)),
-    linked,
+  const tasks = await db.task.findMany({ where: { participantId: first.id } });
+  assert.equal(tasks.length, 1);
+  assert.equal(tasks[0].type, 'TRIAL_FEEDBACK');
+  assert.equal(tasks[0].assigneeId, t.user.id);
+  assert.equal(tasks[0].availableAt.toISOString(), target.endsAt.toISOString());
+  assert.equal((await req(t, `/tasks/${tasks[0].id}`)).status, 403);
+  assert.equal(
+    (await req(t, '/tasks')).data.items.some((x) => x.id === tasks[0].id),
+    false,
   );
   assert.equal(
-    (await db.task.findUniqueOrThrow({ where: { id: source.id } })).version,
-    closed.version,
-  );
-  for (const task of [independent, sales])
-    assert.equal((await db.task.findUniqueOrThrow({ where: { id: task.id } })).status, 'OPEN');
-  passed(
-    'booking: explicit rebooking source closes once with audit linkage; unrelated follow-ups remain open',
-  );
-
-  const foreignStudent = await enrol(b),
-    otherStudent = await enrol();
-  const foreignSource = await follow(foreignStudent, b),
-    wrongStudent = await follow(otherStudent),
-    wrongSubject = await follow(followStudent, a, 'REBOOKING', otherCourseId);
-  for (const [sourceId, kind, expected] of [
-    [foreignSource.id, 'TRIAL', 403],
-    [sales.id, 'TRIAL', 409],
-    [wrongStudent.id, 'TRIAL', 400],
-    [wrongSubject.id, 'TRIAL', 400],
-    [source.id, 'TRIAL', 409],
-    [independent.id, 'REGULAR', 409],
-    ['missing-task', 'TRIAL', 404],
-    ['', 'TRIAL', 400],
-    [null, 'TRIAL', 400],
-  ]) {
-    const l = await lesson(),
-      failureKey = randomUUID();
-    const before = await db.task.findUnique({ where: { id: sourceId ?? 'missing-task' } });
-    const result = await book(
-      followStudent,
-      l,
-      { kind, sourceRebookingTaskId: sourceId },
-      a,
-      failureKey,
-    );
-    assert.equal(result.status, expected, JSON.stringify(result));
-    assert.equal(await db.sessionParticipant.count({ where: { sessionId: l.id } }), 0);
-    assert.equal(
-      (await db.classSession.findUniqueOrThrow({ where: { id: l.id } })).version,
-      l.version,
-    );
-    assert.equal(await db.scheduleChange.count({ where: { sessionId: l.id } }), 0);
-    assert.equal(
-      await db.mutationReceipt.count({ where: { userId: a.user.id, key: failureKey } }),
-      0,
-    );
-    if (before) assert.deepEqual(await db.task.findUnique({ where: { id: before.id } }), before);
-  }
-  // Two funded requests racing to resolve one source cannot both persist a reservation.
-  const rebookTargets = [await lesson(), await lesson()];
-  const rebookRace = await Promise.all(
-    rebookTargets.map((l) => book(followStudent, l, { sourceRebookingTaskId: independent.id })),
-  );
-  assert.deepEqual(rebookRace.map((r) => r.status).sort(), [201, 409]);
-  assert.equal(
-    await db.sessionParticipant.count({
-      where: { sessionId: { in: rebookTargets.map((l) => l.id) } },
+    await db.task.count({
+      where: { participant: { studentId: member.id }, type: 'TRIAL_FEEDBACK' },
     }),
-    1,
+    0,
   );
+  const invalid = await lesson();
+  assert.equal(
+    (await book(guarded, invalid, { sourceRebookingTaskId: 'removed-contract' })).status,
+    400,
+  );
+  assert.equal(await db.sessionParticipant.count({ where: { sessionId: invalid.id } }), 0);
   passed(
-    'booking: foreign/invalid sources and competing rebookings roll back reservations, versions, receipts and logs',
+    'booking: ignores capacity/contact; enforces owner, future, overlap, duplicate and credit rules; trial tasks hidden and old source rejected',
   );
 }

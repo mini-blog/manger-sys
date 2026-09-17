@@ -6,10 +6,10 @@ import pg from 'pg';
 import { verifyBookingCreate } from './booking-create.mjs';
 import { verifyStudentType } from './student-type.mjs';
 import { verifyBookingCancel } from './booking-cancel.mjs';
-import { verifyBookingRestore } from './booking-restore.mjs';
-import { verifyBookingMove } from './booking-move.mjs';
 import { verifyRosterRead } from './roster-read.mjs';
 import { verifyCheckinContracts } from './checkin-contracts.mjs';
+import { verifySessionCommands } from './session-commands.mjs';
+import { verifySessionCancel } from './session-cancel.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
 assert.equal(process.env.ENTITLEMENT_TEST_ISOLATED, 'true', 'Run pnpm test:entitlements.');
 assert.equal(new URL(process.env.DATABASE_URL).pathname, '/entitlement_test');
@@ -956,36 +956,7 @@ try {
     write,
     ensureFollowup,
   });
-  await verifyBookingRestore({
-    db,
-    req,
-    ok,
-    student,
-    a,
-    b,
-    t,
-    courseId,
-    otherCourseId,
-    groupId,
-    now,
-    passed,
-    teaching: app.get(TeachingService),
-  });
-  await verifyBookingMove({
-    db,
-    req,
-    ok,
-    student,
-    a,
-    b,
-    t,
-    courseId,
-    otherCourseId,
-    groupId,
-    now,
-    passed,
-    teaching: app.get(TeachingService),
-  });
+
   await verifyCheckinContracts({
     db,
     pool,
@@ -1014,6 +985,38 @@ try {
     passed,
     document,
     userIds,
+  });
+  await verifySessionCommands({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    login,
+    userIds,
+    courseId,
+    otherCourseId,
+    groupId,
+    teaching: app.get(TeachingService),
+    passed,
+    document,
+  });
+  await verifySessionCancel({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    groupId,
+    now,
+    teaching: app.get(TeachingService),
+    passed,
+    document,
   });
   console.log(
     `Entitlement integration passed (${groups} groups; isolated PostgreSQL; no production migration or real Qwen call).`,

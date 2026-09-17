@@ -69,7 +69,9 @@ export function participantDto(
 }
 export function taskDto(t: FullTask): D.TaskDto {
   const current = lessonDto(t.session);
-  const s = (t.sourceSnapshot ?? {}) as Record<string, string>;
+  // Pending teaching work follows the current lesson; completed events retain their snapshot.
+  const liveTeachingTask = t.status === 'OPEN' && t.type === 'TRIAL_FEEDBACK';
+  const s = (liveTeachingTask ? {} : (t.sourceSnapshot ?? {})) as Record<string, string>;
   return {
     id: t.id,
     type: t.type,
@@ -173,7 +175,7 @@ export class ReadService {
       this.db.classGroup.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       this.db.course.findMany({ select: { id: true, name: true }, orderBy: { name: 'asc' } }),
       this.db.user.findMany({
-        where: { role: 'TEACHER' },
+        where: { role: 'TEACHER', status: 'ACTIVE' },
         select: { id: true, name: true },
         orderBy: { name: 'asc' },
       }),
@@ -437,6 +439,16 @@ export class ReadService {
   }
   async task(user: Actor, id: string): Promise<D.TaskDetailDto> {
     const t = await assignedTask(this.db, user, id);
+    if (
+      t.type === 'TRIAL_FEEDBACK' &&
+      (t.status !== 'OPEN' ||
+        t.session.status !== 'SCHEDULED' ||
+        t.session.endsAt > this.clock.now() ||
+        t.participant?.bookingStatus !== 'BOOKED' ||
+        !t.participant.checkedInAt ||
+        t.participant.attendance !== 'ATTENDED')
+    )
+      throw new ForbiddenException('This evaluation is not available.');
     if (t.availableAt > this.clock.now())
       throw new ForbiddenException('This task is available after the lesson ends.');
     const p = t.participant ? t.session.participants.find((p) => p.id === t.participantId) : null;

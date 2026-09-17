@@ -13,6 +13,11 @@ enum Role {
   TEACHER
 }
 
+enum AccountStatus {
+  ACTIVE
+  DISABLED
+}
+
 enum StudentType {
   TRIAL
   MEMBER
@@ -79,6 +84,12 @@ enum TaskPurpose {
 }
 
 model User {
+  status AccountStatus @default(ACTIVE)
+  isSuperAdmin Boolean @default(false)
+  version Int @default(1)
+  disabledAt DateTime? @db.Timestamptz(3)
+  accountActions AccountAudit[] @relation("AccountActor")
+  accountHistory AccountAudit[] @relation("AccountTarget")
   id           String @id @default(cuid())
   email        String @unique
   name         String
@@ -336,4 +347,19 @@ model LessonPackage {
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
   entries EntitlementEntry[]
   @@index([active, name, id])
+}
+
+model AccountAudit {
+  id String @id @default(cuid())
+  actorId String?
+  actor User? @relation("AccountActor", fields: [actorId], references: [id], onDelete: Restrict)
+  targetUserId String
+  target User @relation("AccountTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  action String
+  reason String?
+  before Json
+  after Json
+  requestKey String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([targetUserId, createdAt])
 }

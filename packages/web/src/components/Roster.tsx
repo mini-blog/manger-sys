@@ -17,13 +17,13 @@ import {
   Typography,
 } from '@mui/material';
 import { Close } from '@mui/icons-material';
-import { DateTime } from 'luxon';
 import { api, apiError } from '../api/client';
 import { useAuth } from '../auth';
 import { local, type Lesson } from '../lib/time';
 import type { components } from '@student/common/api';
 import { useWrite } from '../hooks/useWrite';
 import { label, Status } from './FormParts';
+import { useLessonEditable } from '../hooks/useLessonEditable';
 import { SessionEditor } from './SessionEditor';
 import { FeedbackForm } from '../pages/TaskDetail';
 import { BookingCredits, useBookingCredits } from './BookingCredits';
@@ -44,7 +44,7 @@ export function Roster({ lesson, close }: { lesson: Lesson | null; close: () => 
 function RosterContent({ id, close }: { id: string; close: () => void }) {
   const { auth } = useAuth();
   const admin = auth?.user.role === 'ADMIN';
-  const [edit, setEdit] = useState(false),
+  const [edit, setEdit] = useState<'edit' | 'cancel' | null>(null),
     [history, setHistory] = useState(false),
     [feedback, setFeedback] = useState(false);
   const query = useQuery({
@@ -59,8 +59,12 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
   });
   const r = query.data,
     l = r?.lesson;
-  const future =
-    l?.status === 'SCHEDULED' && !l.feedbackSubmittedAt && new Date(l.startsAt) > new Date();
+  const editableTime = useLessonEditable(l);
+  const future = Boolean(
+    l &&
+    editableTime &&
+    !r?.participants.some((p) => p.feedbackSubmittedAt || p.attendance !== 'PENDING'),
+  );
   return (
     <Stack spacing={2}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
@@ -90,13 +94,18 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
                 : new Date(l.endsAt) <= new Date()
                   ? 'Awaiting feedback'
                   : 'Scheduled'}{' '}
-            · {l.participantCount}/{l.capacity} students
+            · {l.participantCount} students
           </Typography>
           <Stack direction="row" gap={1}>
             {admin && future && (
-              <Button variant="outlined" onClick={() => setEdit(true)}>
-                Edit lesson
-              </Button>
+              <>
+                <Button variant="outlined" onClick={() => setEdit('edit')}>
+                  Edit lesson
+                </Button>
+                <Button color="error" onClick={() => setEdit('cancel')}>
+                  Cancel lesson
+                </Button>
+              </>
             )}
             {admin && <Button onClick={() => setHistory(!history)}>Change history</Button>}
             {!admin && l.status === 'SCHEDULED' && new Date(l.endsAt) <= new Date() && (
@@ -111,10 +120,10 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
             <FeedbackForm key={l.version} roster={r} />
           ) : (
             <>
-              {admin && future && <AddStudent lesson={l} />}
+              {admin && future && <AddStudent lesson={l} participants={r.participants} />}
               <Typography fontWeight={600}>Students ({r.participants.length})</Typography>
               {r.participants.map((p) => (
-                <ParticipantCard key={p.participantId} p={p} lesson={l} future={Boolean(future)} />
+                <ParticipantCard key={p.participantId} p={p} future={Boolean(future)} />
               ))}
               {!r.participants.length && (
                 <Typography color="text.secondary">No students booked yet.</Typography>
@@ -124,36 +133,23 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
                   <Divider />
                   <Typography color="text.secondary">Cancelled bookings</Typography>
                   {r.cancelled.map((p) => (
-                    <ParticipantCard
-                      key={p.participantId}
-                      p={p}
-                      lesson={l}
-                      future={Boolean(future)}
-                    />
+                    <ParticipantCard key={p.participantId} p={p} future={Boolean(future)} />
                   ))}
                 </>
               )}
               {l.summary && <Typography>Class summary: {l.summary}</Typography>}
             </>
           )}
-          {edit && (
-            <SessionEditor
-              lesson={l}
-              participantIds={r.participants.map((p) => p.participantId)}
-              participantNames={r.participants.map((p) => p.name)}
-              close={() => setEdit(false)}
-            />
-          )}
+          {edit && <SessionEditor lesson={l} mode={edit} close={() => setEdit(null)} />}
         </>
       )}
     </Stack>
   );
 }
-function AddStudent({ lesson: l }: { lesson: Lesson }) {
+function AddStudent({ lesson: l, participants }: { lesson: Lesson; participants: Participant[] }) {
   const { auth } = useAuth();
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const sourceId = params.get('sourceRebookingTaskId');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<components['schemas']['StudentDto'] | null>(null);
   const [kind, setKind] = useState<'TRIAL' | 'REGULAR'>(
@@ -171,21 +167,10 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
   });
   const hint = useQuery({
     queryKey: ['student', 'booking-hint', auth?.user.id, params.get('student')],
-    enabled: Boolean(params.get('student')) && !sourceId,
+    enabled: Boolean(params.get('student')),
     queryFn: async () => {
       const { data, error } = await api.GET('/api/students/{id}', {
         params: { path: { id: params.get('student')! } },
-      });
-      if (!data) throw apiError(error);
-      return data;
-    },
-  });
-  const source = useQuery({
-    queryKey: ['task', auth?.user.id, sourceId],
-    enabled: Boolean(sourceId),
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/tasks/{id}', {
-        params: { path: { id: sourceId! } },
       });
       if (!data) throw apiError(error);
       return data;
@@ -198,13 +183,9 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
       setAppliedHint(hint.data.id);
     }
   }, [hint.data, appliedHint]);
-  const picked = sourceId ? (source.data?.student ?? null) : selected;
+  const picked = selected;
   const context = useBookingCredits(picked?.id);
-  const sourceValid =
-    !sourceId ||
-    (source.data?.status === 'OPEN' &&
-      source.data.student?.canEdit &&
-      source.data.lesson.courseId === l.courseId);
+  const alreadyBooked = participants.some((p) => p.id === picked?.id);
   const refresh = () => {
     void client.invalidateQueries({
       predicate: (q) =>
@@ -237,27 +218,15 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
         <Typography fontWeight={600}>Add student</Typography>
         {save.isError && <Alert severity="error">{save.error.message}</Alert>}
         <Status query={query} />
-        {params.get('student') && !sourceId && <Status query={hint} />}
-        {sourceId && (
-          <>
-            <Status query={source} />
-            <Button component={Link} to={`/tasks/${sourceId}`} sx={{ alignSelf: 'flex-start' }}>
-              Rebooking follow-up
-            </Button>
-            {source.data && !sourceValid && (
-              <Typography color="error" variant="body2">
-                Choose a lesson for the follow-up subject. The follow-up must still be open.
-              </Typography>
-            )}
-          </>
-        )}
+        {params.get('student') && <Status query={hint} />}
         <Autocomplete
           options={query.data?.items ?? []}
           value={picked}
           getOptionLabel={(o) => `${o.name} · ${o.yearLevel}`}
           isOptionEqualToValue={(a, b) => a.id === b.id}
           filterOptions={(o) => o}
-          disabled={Boolean(sourceId) || save.isPending}
+          getOptionDisabled={(o) => participants.some((p) => p.id === o.id)}
+          disabled={save.isPending}
           onChange={(_, v) => {
             setSelected(v);
             save.reset();
@@ -285,13 +254,12 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
           </TextField>
           <Button
             variant="contained"
-            disabled={!picked || save.isPending || !sourceValid || !context.ready(kind)}
+            disabled={!picked || alreadyBooked || save.isPending || !context.ready(kind)}
             onClick={() =>
               picked &&
               save.mutate({
                 studentId: picked.id,
                 kind,
-                ...(sourceId ? { sourceRebookingTaskId: sourceId } : {}),
               })
             }
           >
@@ -310,83 +278,33 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
     </Paper>
   );
 }
-function ParticipantCard({
-  p,
-  lesson: l,
-  future,
-}: {
-  p: Participant;
-  lesson: Lesson;
-  future: boolean;
-}) {
+function ParticipantCard({ p, future }: { p: Participant; future: boolean }) {
   const client = useQueryClient();
-  const [params] = useSearchParams();
-  const [action, setAction] = useState<'cancel' | 'restore' | 'move' | ''>(''),
-    [reason, setReason] = useState(''),
-    [target, setTarget] = useState(''),
-    [week, setWeek] = useState(local(l.startsAt).startOf('week').toISODate()!);
-  const context = useBookingCredits(
-    p.canManage && (action === 'restore' || action === 'move') ? p.id : undefined,
-  );
-  const success = () => {
-    setAction('');
-    setReason('');
-    setTarget('');
-  };
-  const refresh = () => {
-    void client.invalidateQueries({
-      predicate: (q) =>
-        ['roster', 'lessons', 'entitlements', 'student'].includes(String(q.queryKey[0])),
-    });
-  };
+  const [removing, setRemoving] = useState(false);
+  const [reason, setReason] = useState('');
   const cancel = useWrite(
     'post',
     '/api/participants/{id}/cancel',
     { id: p.participantId },
-    success,
-    refresh,
-  );
-  const restore = useWrite(
-    'post',
-    '/api/participants/{id}/restore',
-    { id: p.participantId },
-    success,
-    refresh,
-  );
-  const move = useWrite(
-    'post',
-    '/api/participants/{id}/move',
-    { id: p.participantId },
-    success,
-    refresh,
-  );
-  const targets = useQuery({
-    queryKey: ['lessons', 'move', week, l.courseId, l.id],
-    enabled: action === 'move',
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/sessions', {
-        params: { query: { week, courseId: l.courseId } },
-      });
-      if (!data) throw apiError(error);
-      return data.filter(
-        (s) =>
-          s.id !== l.id &&
-          s.status === 'SCHEDULED' &&
-          !s.feedbackSubmittedAt &&
-          new Date(s.startsAt) > new Date(),
-      );
+    () => {
+      setRemoving(false);
+      setReason('');
     },
-  });
-  const command = action === 'move' ? move : action === 'restore' ? restore : cancel;
-  const card = p.kind === 'REGULAR' ? 'REGULAR' : 'TRIAL';
-  const canSubmit =
+    () => {
+      void client.invalidateQueries({
+        predicate: (q) =>
+          ['roster', 'lessons', 'entitlements', 'student'].includes(String(q.queryKey[0])),
+      });
+    },
+  );
+  const canRemove =
     future &&
     p.canManage &&
+    p.bookingStatus === 'BOOKED' &&
     p.attendance === 'PENDING' &&
-    reason.trim() &&
-    !command.isPending &&
-    (action === 'cancel' || context.ready(card, action === 'move')) &&
-    (action !== 'move' || targets.data?.some((s) => s.id === target));
+    !p.feedbackSubmittedAt &&
+    !p.checkedInAt;
+  const canSubmit = canRemove && Boolean(reason.trim()) && !cancel.isPending;
   return (
     <Paper
       sx={{
@@ -411,106 +329,41 @@ function ParticipantCard({
           {p.attendance !== 'PENDING' ? ` · ${label(p.attendance)}` : ''}
         </Typography>
         {p.feedback && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{p.feedback}</Typography>}
-        {p.canManage && future && p.attendance === 'PENDING' && (
-          <Stack direction="row" gap={1}>
-            {(p.bookingStatus === 'BOOKED' ? ['move', 'cancel'] : ['restore']).map((a) => (
-              <Button
-                key={a}
-                disabled={command.isPending}
-                size="small"
-                onClick={() => {
-                  setAction(a as typeof action);
-                  cancel.reset();
-                  restore.reset();
-                  move.reset();
-                }}
-              >
-                {label(a)}
-              </Button>
-            ))}
-          </Stack>
+        {canRemove && !removing && (
+          <Button
+            color="error"
+            sx={{ alignSelf: 'flex-start' }}
+            onClick={() => {
+              setRemoving(true);
+              cancel.reset();
+            }}
+          >
+            Remove student
+          </Button>
         )}
-        {action && (
+        {removing && canRemove && (
           <Stack
             component="form"
             spacing={2}
             onSubmit={(e) => {
               e.preventDefault();
-              if (!canSubmit) return;
-              const body = { expectedVersion: p.version, reason: reason.trim() };
-              if (action === 'move') move.mutate({ ...body, targetSessionId: target });
-              else if (action === 'restore') restore.mutate(body);
-              else cancel.mutate(body);
+              if (canSubmit) cancel.mutate({ expectedVersion: p.version, reason: reason.trim() });
             }}
           >
-            {command.isError && <Alert severity="error">{command.error.message}</Alert>}
-            {(action === 'move' || action === 'restore') && (
-              <BookingCredits
-                studentId={p.id}
-                kind={card}
-                context={context}
-                moving={action === 'move'}
-                returnTo={bookingLocation(params, p.id, card)}
-              />
-            )}
-            {action === 'move' && (
-              <>
-                <TextField
-                  label="Target week"
-                  type="date"
-                  value={week}
-                  disabled={command.isPending}
-                  onChange={(e) => {
-                    const d = DateTime.fromISO(e.target.value);
-                    if (d.isValid) {
-                      setWeek(d.startOf('week').toISODate()!);
-                      setTarget('');
-                    }
-                  }}
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-                <Status query={targets} />
-                <TextField
-                  label="Target lesson · same subject"
-                  select
-                  required
-                  value={target}
-                  disabled={command.isPending || targets.isFetching}
-                  onChange={(e) => {
-                    setTarget(e.target.value);
-                    move.reset();
-                  }}
-                >
-                  <MenuItem value="" disabled>
-                    Select a lesson
-                  </MenuItem>
-                  {targets.data?.map((s) => (
-                    <MenuItem key={s.id} value={s.id}>
-                      {local(s.startsAt).toFormat('ccc d LLL HH:mm')} · {s.className} ·{' '}
-                      {s.teacherName} ({s.participantCount}/{s.capacity})
-                    </MenuItem>
-                  ))}
-                </TextField>
-                {targets.data?.length === 0 && (
-                  <Typography variant="body2">
-                    No future lessons for this subject in this week.
-                  </Typography>
-                )}
-              </>
-            )}
+            {cancel.isError && <Alert severity="error">{cancel.error.message}</Alert>}
             <TextField
               label="Reason"
               value={reason}
-              disabled={command.isPending}
+              disabled={cancel.isPending}
               required
               onChange={(e) => setReason(e.target.value)}
               slotProps={{ htmlInput: { maxLength: 500 } }}
             />
             <Stack direction="row" gap={1}>
               <Button type="submit" variant="outlined" disabled={!canSubmit}>
-                {label(action)} booking
+                {cancel.isPending ? 'Removing…' : 'Confirm removal'}
               </Button>
-              <Button disabled={command.isPending} onClick={() => setAction('')}>
+              <Button disabled={cancel.isPending} onClick={() => setRemoving(false)}>
                 Close
               </Button>
             </Stack>
@@ -542,14 +395,13 @@ function ChangeHistory({ id }: { id: string }) {
           'teacherName',
           'startsAt',
           'endsAt',
-          'capacity',
           'studentName',
           'bookingStatus',
         ].includes(k),
       )
       .map(
         ([k, v]) =>
-          `${({ className: 'Class', courseName: 'Subject', teacherName: 'Teacher', startsAt: 'Start', endsAt: 'End', capacity: 'Capacity', studentName: 'Student', bookingStatus: 'Booking' } as Record<string, string>)[k]}: ${k.endsWith('At') ? local(String(v)).toFormat('d LLL HH:mm') : String(v)}`,
+          `${({ className: 'Class', courseName: 'Subject', teacherName: 'Teacher', startsAt: 'Start', endsAt: 'End', studentName: 'Student', bookingStatus: 'Booking' } as Record<string, string>)[k]}: ${k.endsWith('At') ? local(String(v)).toFormat('d LLL HH:mm') : String(v)}`,
       )
       .join(' · ');
   };

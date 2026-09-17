@@ -24,12 +24,14 @@ import {
 } from '@nestjs/swagger';
 import { IsEmail, IsString, Length } from 'class-validator';
 import { Request, Response } from 'express';
+import { Transform } from 'class-transformer';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma.service';
 import { settings } from '../config';
 import { hashPassword, hashToken, verifyPassword } from './password';
 
 export class UserDto implements UserIdentity {
+  @ApiProperty() isSuperAdmin!: boolean;
   @ApiProperty() id!: string;
   @ApiProperty() name!: string;
   @ApiProperty() email!: string;
@@ -40,7 +42,10 @@ export class AuthDto implements AuthSession {
   @ApiProperty() csrfToken!: string;
 }
 class LoginDto {
-  @ApiProperty({ example: 'alice@example.com' }) @IsEmail() email!: string;
+  @ApiProperty({ example: 'alice@example.com' })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @IsEmail()
+  email!: string;
   @ApiProperty({ minLength: 8, maxLength: 128 }) @IsString() @Length(8, 128) password!: string;
 }
 class LogoutDto {
@@ -68,14 +73,18 @@ export class AuthGuard implements CanActivate {
     });
     if (!session || session.expiresAt.getTime() <= Date.now())
       throw new UnauthorizedException('Your session has expired.');
+    if (session.user.status !== 'ACTIVE') {
+      await this.prisma.authSession.deleteMany({ where: { userId: session.userId } });
+      throw new UnauthorizedException('Your session has expired.');
+    }
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
       req.header('x-csrf-token') !== session.csrfToken
     ) {
       throw new ForbiddenException('Invalid CSRF token.');
     }
-    const { id, name, email, role } = session.user;
-    req.auth = { user: { id, name, email, role }, csrfToken: session.csrfToken };
+    const { id, name, email, role, isSuperAdmin } = session.user;
+    req.auth = { user: { id, name, email, role, isSuperAdmin }, csrfToken: session.csrfToken };
     return true;
   }
 }
@@ -106,17 +115,27 @@ export class AuthController {
     if (attempt.count >= 20)
       throw new ForbiddenException('Too many sign-in attempts. Please try again later.');
     this.attempts.set(key, { ...attempt, count: attempt.count + 1 });
-    const user = await this.prisma.user.findUnique({
-      where: { email: body.email.trim().toLowerCase() },
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: body.email, mode: 'insensitive' } },
     });
     const valid = await verifyPassword(body.password, user?.passwordHash ?? (await this.dummyHash));
-    if (!user || !valid) throw new UnauthorizedException('Email or password is incorrect.');
+    if (!user || !valid || user.status !== 'ACTIVE')
+      throw new UnauthorizedException('Email or password is incorrect.');
     this.attempts.delete(key);
     const token = randomBytes(32).toString('hex');
     const csrfToken = randomBytes(32).toString('hex');
     const maxAge = 8 * 60 * 60_000;
     const oldToken: unknown = req.cookies?.student_session;
     await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(73192461)`;
+      const current = await tx.user.findUnique({ where: { id: user.id } });
+      if (
+        !current ||
+        current.status !== 'ACTIVE' ||
+        current.version !== user.version ||
+        current.passwordHash !== user.passwordHash
+      )
+        throw new UnauthorizedException('Email or password is incorrect.');
       if (typeof oldToken === 'string')
         await tx.authSession.deleteMany({ where: { tokenHash: hashToken(oldToken) } });
       await tx.authSession.create({
@@ -130,7 +149,13 @@ export class AuthController {
     });
     res.cookie('student_session', token, { ...cookieOptions, maxAge });
     return {
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isSuperAdmin: user.isSuperAdmin,
+      },
       csrfToken,
     };
   }

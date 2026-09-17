@@ -9,11 +9,17 @@ const { PrismaService } = require('../dist/prisma.service');
 const { Commands } = require('../dist/common/domain');
 const { EntitlementsService } = require('../dist/workflow/entitlements.service');
 const { hashPassword } = require('../dist/auth/password');
+const { bootstrapSuperAdmin } = require('../dist/accounts/bootstrap-super-admin');
 const { app } = await createApp();
 const db = app.get(PrismaService),
   commands = app.get(Commands),
   credits = app.get(EntitlementsService);
 const passwordHash = await hashPassword('Preview2026!');
+await bootstrapSuperAdmin(db, {
+  email: 'super@preview.test',
+  name: 'Super Admin',
+  password: 'Preview2026!',
+});
 const admin = await db.user.create({
   data: {
     id: 'preview-admin',
@@ -93,13 +99,18 @@ await db.student.create({
     ownerAdminId: 'preview-other',
   },
 });
+// Keep the single-credit example outside the weekly timetable's daytime slots.
+const starts = DateTime.now()
+  .setZone('Australia/Melbourne')
+  .plus({ days: 1 })
+  .set({ hour: 19, minute: 0, second: 0, millisecond: 0 });
 const session = await db.classSession.create({
   data: {
     courseId: course.id,
     classGroupId: group.id,
     teacherId: 'preview-teacher',
-    startsAt: new Date(Date.now() + 86400000),
-    endsAt: new Date(Date.now() + 90000000),
+    startsAt: starts.toJSDate(),
+    endsAt: starts.plus({ hours: 1 }).toJSDate(),
     capacity: 10,
   },
 });

@@ -1,3 +1,5 @@
+import { AccountsController } from './accounts/controller';
+import { AccountsService } from './accounts/service';
 import { BUSINESS_TIMEZONE } from '@student/common';
 import { Controller, Get, Module } from '@nestjs/common';
 import { ApiOkResponse, ApiProperty, ApiTags } from '@nestjs/swagger';
@@ -32,8 +34,15 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, AuthController, WorkflowController, EntitlementsController],
+  controllers: [
+    AccountsController,
+    HealthController,
+    AuthController,
+    WorkflowController,
+    EntitlementsController,
+  ],
   providers: [
+    AccountsService,
     PrismaService,
     AuthGuard,
     Clock,

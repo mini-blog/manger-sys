@@ -19,7 +19,8 @@
     "test:integration": "pnpm --filter @student/api... build && node packages/api/test/integration.mjs && node packages/api/test/workflow.mjs",
     "test:qwen": "pnpm --filter @student/api... build && node packages/api/test/qwen-smoke.mjs",
     "test:entitlements": "node scripts/test-entitlements.mjs",
-    "preview:entitlements": "node scripts/preview-entitlements.mjs"
+    "preview:entitlements": "node scripts/preview-entitlements.mjs",
+    "accounts:bootstrap": "pnpm --filter @student/api... build && pnpm --filter @student/api accounts:bootstrap"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

@@ -148,6 +148,14 @@ export function Layout() {
           : []),
       ],
     },
+    ...(admin && auth?.user.isSuperAdmin
+      ? [
+          {
+            label: 'System management',
+            items: [{ path: '/accounts', label: 'Accounts', icon: <PeopleOutline /> }],
+          },
+        ]
+      : []),
   ];
   const isActive = (path: string) =>
     path === '/'

@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import type { ParticipantKind } from '@student/common';
 import { api, apiError } from '../api/client';
 import { useAuth } from '../auth';
-import { contactIssue } from '../lib/booking';
 import { Status } from './FormParts';
 
 export function useBookingCredits(studentId: string | undefined) {
@@ -31,19 +30,22 @@ export function useBookingCredits(studentId: string | undefined) {
       return data;
     },
   });
-  const issue = profile.data ? contactIssue(profile.data) : null;
+  const issue =
+    profile.data && !profile.data.canEdit
+      ? 'Only the responsible admin can book this student.'
+      : null;
   return {
     profile,
     credits,
     issue,
-    ready: (kind: ParticipantKind, moving = false) =>
+    ready: (kind: ParticipantKind) =>
       profile.isSuccess &&
       credits.isSuccess &&
       !credits.isFetching &&
       !profile.isFetching &&
       !issue &&
       (kind !== 'REGULAR' || profile.data.type === 'MEMBER') &&
-      credits.data.balances[kind].available + (moving ? 1 : 0) >= 1,
+      credits.data.balances[kind].available >= 1,
   };
 }
 export function BookingCredits({
@@ -51,17 +53,15 @@ export function BookingCredits({
   kind,
   context,
   returnTo,
-  moving = false,
 }: {
   studentId: string;
   kind: ParticipantKind;
   context: ReturnType<typeof useBookingCredits>;
   returnTo: string;
-  moving?: boolean;
 }) {
   const { profile, credits, issue } = context;
   const short = kind === 'TRIAL' ? 'trial' : 'regular';
-  const insufficient = credits.data && credits.data.balances[kind].available + (moving ? 1 : 0) < 1;
+  const insufficient = credits.data && credits.data.balances[kind].available < 1;
   const purchaseRequired = kind === 'REGULAR' && profile.data?.type === 'TRIAL';
   return (
     <Stack spacing={0.5}>
@@ -80,11 +80,6 @@ export function BookingCredits({
             </Typography>
           ))}
         </Stack>
-      )}
-      {moving && (
-        <Typography variant="caption" color="text.secondary">
-          The current reservation transfers with this booking.
-        </Typography>
       )}
       {issue && (
         <Typography variant="body2" color="error">
@@ -111,7 +106,7 @@ export function BookingCredits({
         to={`/students/${studentId}?${new URLSearchParams({ returnTo })}`}
         sx={{ alignSelf: 'flex-start' }}
       >
-        {issue ? 'Complete contact details' : 'Student details'}
+        Student details
       </Button>
     </Stack>
   );

@@ -33,6 +33,7 @@ export function Timetable() {
   const { auth } = useAuth();
   const admin = auth?.user.role === 'ADMIN';
   const [params, setParams] = useSearchParams();
+  const hasLegacySource = params.has('sourceRebookingTaskId');
   const initialWeek = DateTime.fromISO(params.get('week') ?? '', { zone: ZONE });
   const [week, setWeek] = useState<DateTime>(
     initialWeek.isValid ? initialWeek.startOf('week') : currentWeek(),
@@ -64,7 +65,9 @@ export function Timetable() {
   };
   useEffect(() => {
     setParams(
-      (p) => {
+      (previous) => {
+        const p = new URLSearchParams(previous);
+        p.delete('sourceRebookingTaskId');
         for (const [k, v] of Object.entries({
           week: week.toISODate()!,
           q: search,
@@ -80,7 +83,7 @@ export function Timetable() {
       },
       { replace: true },
     );
-  }, [week, search, course, group, teacher, view, setParams]);
+  }, [week, search, course, group, teacher, view, hasLegacySource, setParams]);
   const query = useLessons(week.toISODate()!, search);
   const lessons = query.data ?? [];
   const selected = lessons.find((lesson) => lesson.id === params.get('lesson')) ?? null;
@@ -282,9 +285,7 @@ export function Timetable() {
                   </TableCell>
                   <TableCell>{l.courseName}</TableCell>
                   <TableCell>{l.teacherName}</TableCell>
-                  <TableCell>
-                    {l.participantCount} / {l.capacity}
-                  </TableCell>
+                  <TableCell>{l.participantCount}</TableCell>
                   <TableCell>{l.trialCount || '—'}</TableCell>
                   <TableCell>
                     <Button size="small" onClick={() => selectLesson(l.id)}>
@@ -377,7 +378,7 @@ export function Timetable() {
                           sx={{ mt: 1.25 }}
                         >
                           <Typography variant="caption" color="text.secondary">
-                            {l.participantCount}/{l.capacity} students
+                            {l.participantCount} students
                           </Typography>
                           {l.trialCount > 0 && (
                             <Chip
