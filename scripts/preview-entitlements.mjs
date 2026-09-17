@@ -81,9 +81,9 @@ try {
     QWEN_API_KEY: '',
     ACCOUNT_COMMAND_HASH_SECRET: randomUUID() + randomUUID(),
   };
-  for (const args of [['--filter', '@student/api...', 'build'], ['db:migrate']]) {
+  for (const args of [['--filter', '@student/api...', 'build'], ['db:init']]) {
     const r = spawnSync('pnpm', args, { cwd: root, env, stdio: 'inherit' });
-    if (r.status !== 0) throw new Error('Preview build/migration failed.');
+    if (r.status !== 0) throw new Error('Preview build/schema initialization failed.');
   }
   // Seed once. The watched API can then restart after a build without recreating test data.
   const fixture = spawnSync(process.execPath, ['packages/api/test/ui-preview.mjs'], {

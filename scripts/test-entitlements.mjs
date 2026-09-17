@@ -64,7 +64,7 @@ try {
     ACCOUNT_COMMAND_HASH_SECRET: randomUUID() + randomUUID(),
   };
   run('pnpm', ['--filter', '@student/api...', 'build'], env);
-  run('pnpm', ['db:migrate'], env);
+  run('pnpm', ['db:init'], env);
   run(process.execPath, ['packages/api/test/entitlements.mjs'], env);
   run(process.execPath, ['packages/api/test/accounts.mjs'], env);
   // Final seed and current HTTP lifecycle only; retired move/restore/reopen matrices are excluded.

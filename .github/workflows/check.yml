@@ -32,7 +32,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: node scripts/check-compose.mjs
-      - run: pnpm db:generate && pnpm db:migrate && pnpm db:seed
+      - run: pnpm db:generate && pnpm db:init && pnpm db:seed
       - run: pnpm check && pnpm test && pnpm test:integration
       - run: pnpm build
       - run: pnpm openapi:generate

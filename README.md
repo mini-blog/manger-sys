@@ -2,6 +2,10 @@
 
 面向澳洲中小学教培机构的内部PC应用。Admin负责学生、排课、登记课时和跟进家长；Teacher只查看本人课程、签到和逐学生评价。所有课程都是正常课程，试听/会员身份由学生资料及正式购课决定。
 
+## 当前本地运行环境
+
+目前仅运行[18080](http://127.0.0.1:18080/login)，使用`.env.local18080`和Compose项目`studentsys-local`。账号及完整启动命令见[DESIGN第9节](DESIGN.md#9-唯一本地环境账号与启动)。当前数据来自`sql/development-seed.sql`；下文通用开发命令不是额外运行中的环境。
+
 ## 当前功能
 
 - 学生三Tab：试听学生、首次正式购课7个墨尔本日历日内的新会员、会员。建档记录学生性别/年龄、主要家长资料，当前负责人和录入人来自登录会话。
@@ -28,13 +32,12 @@ pnpm workspace：`packages/web`（React、MUI、React Query）、`packages/api`�
 cp .env.example .env
 pnpm install --frozen-lockfile
 docker compose -f compose.dev.yaml up -d --build --wait db
-pnpm db:seed
 pnpm dev
 ```
 
 前端默认5173，后端3100，PostgreSQL5433。`.env`中的DATABASE_URL应与数据库端口/凭据一致；账号命令需设置随机`ACCOUNT_COMMAND_HASH_SECRET`，可用`openssl rand -hex 32`生成。勿将真实密钥提交Git。
 
-当前未发布，开发服务器不做数据库升级迁移。数据库镜像在空卷首次启动时建立当前结构；已有开发库结构过旧时，确认项目名后单独重建本项目开发库。更新镜像或重启不会删除数据，也不会自动更新已有表结构；不要对快照初始化的库再执行`pnpm db:migrate`。生产或其他项目数据库不能按开发重建处理。
+当前未发布，开发服务器不做数据库升级迁移。数据库镜像在空卷首次启动时建立当前结构；已有开发库结构过旧时，确认项目名后单独重建本项目开发库。更新镜像或重启不会删除数据，也不会自动更新已有表结构；`pnpm db:init`仅供全新空库建表，不要对已有库重复执行。生产或其他项目数据库不能按开发重建处理。
 
 ## Docker Compose
 
@@ -42,7 +45,6 @@ pnpm dev
 
 ```sh
 docker compose -f compose.dev.yaml up -d --build
-docker compose -f compose.dev.yaml exec api pnpm db:seed
 ```
 
 部署镜像在容器内构建，Nginx为唯一宿主入口，API和数据库只在容器网络内：
@@ -53,11 +55,13 @@ cp .env.prod.example .env.prod
 docker compose --env-file .env.prod -f compose.prod.yaml up -d --build
 ```
 
-生产默认8080，HTTPS应设置`SESSION_COOKIE_SECURE=true`；只在本机HTTP验收时设false。不自动向生产写演示数据。不运行全局Docker清理命令。
+生产默认8080，HTTPS应设置`SESSION_COOKIE_SECURE=true`；只在本机HTTP验收时设false。当前镜像用于开发服务器，首次空卷会自动写入下述演示数据。不运行全局Docker清理命令。
 
-`packages/database/Dockerfile`基于官方PostgreSQL17构建。构建时在临时空库用现有SQL定义生成完整schema快照（含CHECK、唯一索引及负责人同步/保护触发器），最终镜像只携带初始化快照，不携带升级任务。首次空卷由PostgreSQL入口初始化；TCP健康检查等待初始化结束才启动API。CI及隔离测试仍可在自身空库使用历史SQL验证，不会在开发服务器执行迁移。
+`packages/database/Dockerfile`基于官方PostgreSQL17构建，按顺序内置`sql/schema.sql`（完整建表、CHECK、唯一索引及负责人触发器）和`sql/development-seed.sql`（演示数据）。仅首次空卷启动执行；TCP健康检查等待两者完成才启动API。已删除Prisma迁移历史，不再运行迁移命令。CI及隔离测试通过`pnpm db:init`直接执行相同建表SQL，再用TypeScript seed准备测试专用数据。后续结构修改需同步Prisma schema与建表SQL。
 
 ## 演示与账号
+
+开发服务器首次空卷自动执行[SQL演示数据](sql/development-seed.sql)及[账号/执行说明](sql/README.md)：1个super、5个Admin、20个Teacher、10会员/5试听、15笔充值、3节课程及试听待办。新建账号统一演示密码为`StudentSysDemo2026!`。已有卷不会自动补录；需要时可手动执行数据SQL。与下方可选的pnpm seed是两套独立演示数据。
 
 执行seed前配置`SEED_PASSWORD`，seed不覆盖已有账号密码。演示账号：`alice@example.com`、`oliver@example.com`（Admin），`emma@example.com`、`james@example.com`（Teacher）。密码取自己的SEED_PASSWORD。
 
@@ -68,7 +72,7 @@ seed有周一至周日60节课程、试听/新会员/会员，以及两节已结
 3. 在课时管理给该学生新增正式卡，学生转为新会员，旧人工跟进结果保持不变。
 4. 从未来课表可继续演示建档、加入、修改课程及取消；只有到开课时间才可签到。
 
-超级管理员不由seed自动生成，需显式初始化：
+首次空卷的SQL会生成`super@demo.studentsys.test`。如果已有库尚无super，可使用以下CLI显式初始化（TypeScript seed不生成super）：
 
 ```sh
 # 在后端环境设置SUPER_ADMIN_EMAIL、SUPER_ADMIN_NAME、SUPER_ADMIN_PASSWORD
@@ -87,7 +91,7 @@ GitHub runner构建Linux amd64的web/api/db三个镜像，压缩后通过SSH上�
 
 共3个镜像及3个容器：web内含Nginx、api、db为PostgreSQL。构建后执行 `DEPLOY_TEST_IMAGE=studentsys-db:<tag> node scripts/test-database-image.mjs` 验证真实空库初始化、触发器及重启保留数据，再执行同一变量下的 `node scripts/test-deploy-server.mjs`，以模拟Docker命令验证部署顺序和失败处理，最后上传镜像包。
 
-首次发布自动生成独立数据库密码和账号命令密钥，保存为服务器 `/opt/studentsys/.env.prod`（root所有，权限600）；后续保留该文件及数据库卷。当前使用80端口HTTP，`SESSION_COOKIE_SECURE=false`，仅作为测试/演示入口；配置HTTPS时将其改为true。千问默认未配置。部署不上传本地.env、不自动seed、不生成默认登录账号。
+首次发布自动生成独立数据库密码和账号命令密钥，保存为服务器 `/opt/studentsys/.env.prod`（root所有，权限600）；后续保留该文件及数据库卷。当前使用80端口HTTP，`SESSION_COOKIE_SECURE=false`，仅作为测试/演示入口；配置HTTPS时将其改为true。千问默认未配置。部署不上传本地.env；数据库首次空卷启动自动导入SQL演示账号及业务数据，已有卷保持原数据。
 
 发布顺序：校验压缩包 → 加载镜像 → 停止旧web/api → 数据库健康 → API健康 → web及代理API健康 → 标记current版本。更新有短暂中断；数据库初始化或健康检查失败会停止发布，不自动删库重建。`/opt/studentsys/current`仅在健康检查通过后更新，失败发布需从对应 `releases/<SHA>-<run>-<attempt>` 目录检查。首次真实GitHub执行前，不能将本地检查等同于远程部署成功。
 

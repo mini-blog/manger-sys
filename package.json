@@ -12,7 +12,7 @@
     "check": "pnpm --filter @student/common build && pnpm db:generate && pnpm -r check",
     "test": "pnpm --filter @student/common build && pnpm db:generate && pnpm --filter @student/api test",
     "db:generate": "pnpm --filter @student/api db:generate",
-    "db:migrate": "pnpm --filter @student/api db:migrate",
+    "db:init": "pnpm --filter @student/api db:init",
     "db:seed": "pnpm --filter @student/api db:seed",
     "openapi:generate": "pnpm --filter @student/api... build && pnpm --filter @student/api openapi:export && pnpm --filter @student/common api:generate && pnpm --filter @student/common build",
     "format": "prettier --write \"packages/**/src/**/*.{ts,tsx}\" \"packages/**/test/*.{ts,mjs}\" \"packages/**/prisma/seed.ts\" \"*.json\" \"*.yaml\"",

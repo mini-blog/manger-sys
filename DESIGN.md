@@ -92,7 +92,9 @@
 
 React/TypeScript、MUI和React Query组织表单与查询；NestJS/Prisma连接PostgreSQL，OpenAPI统一契约，pnpm的common包共享类型。Compose开发挂载源码热更新；生产镜像内构建，由前端Nginx代理API，仅开放前端端口。启动与验证见[README](README.md)。
 
-按2026-09-18部署追加要求，新增GitHub Actions检查后发布：main自动/手动触发，runner构建amd64镜像，经SSH上传到新加坡轻量服务器。用户明确开发服务器不考虑数据库迁移：Compose仅保留web（含Nginx）/api/db，数据库镜像首次空卷初始化当前schema快照及约束/触发器，已有库不升级、不自动重建。暂以公网IP的HTTP入口演示，服务器独立生成并保留运行密钥，不自动seed；HTTPS与首次超级管理员初始化见README。工作流配置和本地验证不代表GitHub远程发布已完成。
+按2026-09-18部署追加要求，新增GitHub Actions检查后发布：main自动/手动触发，runner构建amd64镜像，经SSH上传到新加坡轻量服务器。用户明确开发服务器不考虑数据库迁移：Compose仅保留web（含Nginx）/api/db，数据库镜像首次空卷初始化当前schema快照及约束/触发器，已有库不升级、不自动重建。暂以公网IP的HTTP入口演示，服务器独立生成并保留运行密钥；首次空卷自动执行建表及演示SQL，HTTPS与账号见README。工作流配置和本地验证不代表GitHub远程发布已完成。
+
+用户最新要求删除迁移历史，首次空卷自动准备演示数据：`sql/development-seed.sql`按现有业务规则提供1个super（存在则复用）、5个普通Admin、20个Teacher、10会员与5试听学生、10正式/5试听充值、3节课程以及可见教师评价和负责Admin跟进。签到消费与充值分开；重复导入不覆盖真实操作，不改变密码或补满余额，已有卷不重复运行。
 
 ## 7. 假设、待确认与交付边界
 
@@ -106,11 +108,57 @@ React/TypeScript、MUI和React Query组织表单与查询；NestJS/Prisma连接P
 
 只有超级管理员显示“系统管理 → 账号管理”，并能查看、新增、修改和停用Admin/Teacher。角色仍只有这两种；超级管理员是Admin账号的额外`isSuperAdmin`权限，普通账号不能通过表单赋值。超级权限只扩展员工管理，学生私密资料及个人待办继续遵循原有归属规则。服务器必须独立鉴权，不能仅隐藏菜单。
 
-账号列表按姓名/邮箱、角色和状态筛选；新建填写姓名、邮箱、角色和初始密码；编辑姓名/邮箱，角色创建后只读，避免改变既有教学与学生关系。密码重置单独操作并撤销旧会话。首个超级管理员通过受控CLI和环境变量初始化，不提供默认密码，不自动升级既有普通员工，本期无角色管理和权限配置页。
+账号列表按姓名/邮箱、角色和状态筛选；新建填写姓名、邮箱、角色和初始密码；编辑姓名/邮箱，角色创建后只读，避免改变既有教学与学生关系。密码重置单独操作并撤销旧会话。开发服务器首次空卷SQL创建演示super；其他未初始化super的环境通过受控CLI和环境变量初始化，不自动升级既有普通员工，本期无角色管理和权限配置页。
 
 “注销”指停用，保存历史而非删除账号：禁止再次登录、使已有会话失效、记录原因和审计。停用Admin若仍有学生，须原子交接全部学生和未完成跟进给另一活动Admin；停用Teacher若仍有未来/进行中课程、已签到待评价，先替课或完成反馈；已结束未签到的隐藏评价不构成待完成教学，停用时取消。不能注销超级管理员或自己；不提供邮箱复用或重新启用。状态变更采用版本、幂等及事务保护；历史反馈和课时操作者不改写。
 
 开发按[账号管理计划](.plan/13-accounts.md)拆成8项后端、4项前端和2项验收，每项规定接口、源码入口、边界、前置及检查。这些任务已在隔离PG与Chrome完成验收，见[账号验收](docs/ACCOUNTS-MILESTONE.md)。当前预览库已通过CLI创建super，账号页面可运行；新的Compose环境首次建表后仍需显式初始化super。
+
+## 9. 唯一本地环境、账号与启动
+
+2026-09-18按用户要求统一为 **[http://127.0.0.1:18080/login](http://127.0.0.1:18080/login)**。旧18084/18085等环境及预览进程已关闭，旧StudentSys镜像已清理；当前仅保留web/api/db三个`local18080`镜像。仅web发布`127.0.0.1:18080`，API和PostgreSQL通过容器内网访问。
+
+### 9.1 SQL初始化后的账号
+
+当前库使用[sql/development-seed.sql](sql/development-seed.sql)初始化，以下均为虚构演示账号，统一密码 **`StudentSysDemo2026!`**，不再使用之前的`@example.com`或`@preview.test`账号。
+
+| 类型 | 登录账号 | 数量 | 推荐演示 |
+| --- | --- | ---: | --- |
+| 超级管理员 | `super@demo.studentsys.test` | 1 | 账号管理；并不绕过学生负责人限制 |
+| Admin | `admin01@demo.studentsys.test`、`admin02@demo.studentsys.test`、`admin03@demo.studentsys.test`、`admin04@demo.studentsys.test`、`admin05@demo.studentsys.test` | 5 | admin01有1条试听跟进；每人负责3名学生 |
+| Teacher | `teacher01@demo.studentsys.test`至`teacher20@demo.studentsys.test`（两位数字，连续编号） | 20 | teacher01有1条待评价；teacher02有未签到学生；teacher03有未来课程 |
+
+数据包括15名学生（5试听、5新会员、5会员）、3节课程（墨尔本昨日2节、明日1节）、15条预约、15条正数课时记录和12条签到扣课记录。5条教师任务中1条已完成，只有1条OPEN当前可见，另3条因未签到/未下课隐藏；Admin有1条OPEN跟进。超级管理员没有负责的学生，所以自己的课时列表为空，业务演示使用admin01。
+
+### 9.2 启动、停止及查看日志
+
+配置保存在本机被Git忽略的`.env.local18080`，包含独立数据库凭据、账号命令密钥、`IMAGE_TAG=local18080`、`WEB_PORT=18080`、`WEB_BIND_ADDRESS=127.0.0.1`和本机HTTP的`SESSION_COOKIE_SECURE=false`。当前使用`compose.prod.yaml`的镜像运行方式，**不挂载源码、不提供热更新**。
+
+```sh
+cd /Users/Zhuanz/work/studentSys
+# 先启动Docker Desktop；重新启动已有环境，不重复初始化已有卷
+docker compose --env-file .env.local18080 -p studentsys-local -f compose.prod.yaml up -d --wait
+
+# 修改代码后重新构建并启动同一个环境
+docker compose --env-file .env.local18080 -p studentsys-local -f compose.prod.yaml up -d --build --wait
+
+# 状态、日志
+docker compose --env-file .env.local18080 -p studentsys-local -f compose.prod.yaml ps
+docker compose --env-file .env.local18080 -p studentsys-local -f compose.prod.yaml logs -f api web
+
+# 停止，保留数据库卷
+docker compose --env-file .env.local18080 -p studentsys-local -f compose.prod.yaml down
+```
+
+当前数据库镜像在空卷首次启动时按`001-schema.sql`、`002-development-seed.sql`顺序执行建表和演示数据；已有卷启动不会重建或补数据。本轮已在新库显式执行指定SQL并核对。需要手动执行同一文件时：
+
+```sh
+docker compose --env-file .env.local18080 -p studentsys-local -f compose.prod.yaml exec -T db \
+  sh -c 'exec psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < sql/development-seed.sql
+```
+
+SQL一次事务完成；重复导入依据完成标记跳过，不补余额、不重开任务。当前账号由SQL创建，不再额外运行旧Prisma演示seed。旧库备份保存在本机`tmp/consolidation-backups/`；测试写入在验收后还原到本次SQL的初始状态。详见[18080整合验收](docs/LOCAL18080-VERIFICATION.md)。
 
 ## 附录：核心页面草图（不计正文页数）
 

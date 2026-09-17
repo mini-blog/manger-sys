@@ -1,0 +1,1060 @@
+-- Current StudentSys schema for EMPTY databases only. No upgrade history.
+-- Keep aligned with prisma/schema.prisma, including SQL-only constraints and triggers.
+BEGIN;
+--
+-- PostgreSQL database dump
+--
+
+
+-- Dumped from database version 17.10
+-- Dumped by pg_dump version 17.10
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET transaction_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+--
+-- Name: AccountStatus; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."AccountStatus" AS ENUM (
+    'ACTIVE',
+    'DISABLED'
+);
+
+
+--
+-- Name: Attendance; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."Attendance" AS ENUM (
+    'PENDING',
+    'ATTENDED',
+    'NO_SHOW'
+);
+
+
+--
+-- Name: BookingStatus; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."BookingStatus" AS ENUM (
+    'BOOKED',
+    'CANCELLED'
+);
+
+
+--
+-- Name: EntitlementBucket; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."EntitlementBucket" AS ENUM (
+    'TRIAL',
+    'REGULAR'
+);
+
+
+--
+-- Name: EntitlementKind; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."EntitlementKind" AS ENUM (
+    'INITIAL_TRIAL',
+    'TRIAL_GRANT',
+    'PURCHASE',
+    'CONSUMPTION',
+    'MIGRATION'
+);
+
+
+--
+-- Name: FollowupOutcome; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."FollowupOutcome" AS ENUM (
+    'PURCHASE_RECORDED',
+    'INTERESTED',
+    'CONSIDERING',
+    'NOT_INTERESTED',
+    'UNREACHABLE'
+);
+
+
+--
+-- Name: MembershipCategory; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."MembershipCategory" AS ENUM (
+    'TRIAL_STUDENT',
+    'NEW_MEMBER',
+    'MEMBER'
+);
+
+
+--
+-- Name: ParticipantKind; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."ParticipantKind" AS ENUM (
+    'REGULAR',
+    'TRIAL'
+);
+
+
+--
+-- Name: Role; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."Role" AS ENUM (
+    'ADMIN',
+    'TEACHER'
+);
+
+
+--
+-- Name: SessionStatus; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."SessionStatus" AS ENUM (
+    'SCHEDULED',
+    'CANCELLED'
+);
+
+
+--
+-- Name: StudentType; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."StudentType" AS ENUM (
+    'TRIAL',
+    'MEMBER'
+);
+
+
+--
+-- Name: TaskPurpose; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."TaskPurpose" AS ENUM (
+    'FIRST_PURCHASE'
+);
+
+
+--
+-- Name: TaskStatus; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."TaskStatus" AS ENUM (
+    'OPEN',
+    'DONE',
+    'CANCELLED'
+);
+
+
+--
+-- Name: TaskType; Type: TYPE; Schema: public; Owner: -
+--
+
+CREATE TYPE public."TaskType" AS ENUM (
+    'TRIAL_FEEDBACK',
+    'TRIAL_FOLLOWUP'
+);
+
+
+--
+-- Name: guard_student_admin_link(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.guard_student_admin_link() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW."adminId" IS DISTINCT FROM (SELECT "ownerAdminId" FROM "Student" WHERE id=NEW."studentId") THEN
+    RAISE EXCEPTION 'Responsible admin must match student ownership' USING ERRCODE='23514';
+  END IF;
+  IF TG_OP = 'UPDATE' AND (NEW."studentId" IS DISTINCT FROM OLD."studentId" OR
+    (OLD."createdByAdminId" IS NOT NULL AND NEW."createdByAdminId" IS DISTINCT FROM OLD."createdByAdminId")) THEN
+    RAISE EXCEPTION 'Recorded-by relationship is immutable' USING ERRCODE='23514';
+  END IF;
+  IF NEW."createdByAdminId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "User" WHERE id=NEW."createdByAdminId" AND role='ADMIN') THEN
+    RAISE EXCEPTION 'Recording user must be an admin' USING ERRCODE='23514';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: sync_student_admin_link(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.sync_student_admin_link() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  INSERT INTO "StudentAdminLink" ("studentId", "adminId", "createdAt")
+  VALUES (NEW.id, NEW."ownerAdminId", NEW."createdAt")
+  ON CONFLICT ("studentId") DO UPDATE SET "adminId" = EXCLUDED."adminId";
+  RETURN NEW;
+END;
+$$;
+
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: AccountAudit; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AccountAudit" (
+    id text NOT NULL,
+    "actorId" text,
+    "targetUserId" text NOT NULL,
+    action text NOT NULL,
+    reason text,
+    before jsonb NOT NULL,
+    after jsonb NOT NULL,
+    "requestKey" text NOT NULL,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    CONSTRAINT "AccountAudit_actor" CHECK (((action = 'SYSTEM_BOOTSTRAP'::text) = ("actorId" IS NULL)))
+);
+
+
+--
+-- Name: AuthSession; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AuthSession" (
+    "tokenHash" text NOT NULL,
+    "csrfToken" text NOT NULL,
+    "userId" text NOT NULL,
+    "expiresAt" timestamp(3) with time zone NOT NULL
+);
+
+
+--
+-- Name: ClassGroup; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ClassGroup" (
+    id text NOT NULL,
+    name text NOT NULL,
+    "targetLevel" text NOT NULL
+);
+
+
+--
+-- Name: ClassSession; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ClassSession" (
+    id text NOT NULL,
+    "classGroupId" text NOT NULL,
+    "courseId" text NOT NULL,
+    "teacherId" text NOT NULL,
+    "startsAt" timestamp(3) with time zone NOT NULL,
+    "endsAt" timestamp(3) with time zone NOT NULL,
+    status public."SessionStatus" DEFAULT 'SCHEDULED'::public."SessionStatus" NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    CONSTRAINT "ClassSession_time_check" CHECK (("endsAt" > "startsAt")),
+    CONSTRAINT session_positive_duration CHECK (("endsAt" > "startsAt"))
+);
+
+
+--
+-- Name: CommunicationLog; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."CommunicationLog" (
+    id text NOT NULL,
+    "studentId" text NOT NULL,
+    "taskId" text,
+    "participantId" text,
+    "guardianNameSnapshot" text NOT NULL,
+    "relationshipSnapshot" text,
+    channel text NOT NULL,
+    content text NOT NULL,
+    outcome text,
+    "occurredAt" timestamp(3) with time zone NOT NULL,
+    "createdBy" text NOT NULL,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    concerns text,
+    "coreQuestion" text,
+    "reasonTags" text[] DEFAULT ARRAY[]::text[] NOT NULL
+);
+
+
+--
+-- Name: Course; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Course" (
+    id text NOT NULL,
+    name text NOT NULL
+);
+
+
+--
+-- Name: EntitlementEntry; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."EntitlementEntry" (
+    id text NOT NULL,
+    "studentId" text NOT NULL,
+    bucket public."EntitlementBucket" NOT NULL,
+    kind public."EntitlementKind" NOT NULL,
+    quantity integer NOT NULL,
+    "participantId" text,
+    "actorId" text,
+    note text,
+    "sourceKey" text NOT NULL,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "packageId" text,
+    "packageSnapshot" jsonb,
+    CONSTRAINT "EntitlementEntry_actor_check" CHECK ((("actorId" IS NOT NULL) OR (kind = 'MIGRATION'::public."EntitlementKind"))),
+    CONSTRAINT "EntitlementEntry_package_check" CHECK (((("packageId" IS NULL) AND ("packageSnapshot" IS NULL)) OR (("packageId" IS NOT NULL) AND ("packageSnapshot" IS NOT NULL) AND (jsonb_typeof("packageSnapshot") = 'object'::text) AND (kind = 'PURCHASE'::public."EntitlementKind") AND (bucket = 'REGULAR'::public."EntitlementBucket")))),
+    CONSTRAINT "EntitlementEntry_participant_check" CHECK ((((kind = 'CONSUMPTION'::public."EntitlementKind") AND ("participantId" IS NOT NULL)) OR ((kind <> 'CONSUMPTION'::public."EntitlementKind") AND ("participantId" IS NULL)))),
+    CONSTRAINT "EntitlementEntry_quantity_kind_check" CHECK ((((kind = 'INITIAL_TRIAL'::public."EntitlementKind") AND (bucket = 'TRIAL'::public."EntitlementBucket") AND (quantity = 1)) OR ((kind = 'TRIAL_GRANT'::public."EntitlementKind") AND (bucket = 'TRIAL'::public."EntitlementBucket") AND ((quantity >= 1) AND (quantity <= 10000))) OR ((kind = 'PURCHASE'::public."EntitlementKind") AND (bucket = 'REGULAR'::public."EntitlementBucket") AND ((quantity >= 1) AND (quantity <= 10000))) OR ((kind = 'CONSUMPTION'::public."EntitlementKind") AND (quantity = '-1'::integer)) OR ((kind = 'MIGRATION'::public."EntitlementKind") AND ((quantity > 0) OR ((quantity = 0) AND (bucket = 'REGULAR'::public."EntitlementBucket"))))))
+);
+
+
+--
+-- Name: LessonPackage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."LessonPackage" (
+    id text NOT NULL,
+    name text NOT NULL,
+    quantity integer NOT NULL,
+    "priceAudCents" integer NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "updatedAt" timestamp(3) with time zone NOT NULL,
+    CONSTRAINT "LessonPackage_values_check" CHECK ((((quantity >= 1) AND (quantity <= 10000)) AND ("priceAudCents" > 0) AND (version >= 1)))
+);
+
+
+--
+-- Name: MutationReceipt; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."MutationReceipt" (
+    id text NOT NULL,
+    "userId" text NOT NULL,
+    operation text NOT NULL,
+    key text NOT NULL,
+    "requestHash" text NOT NULL,
+    response jsonb NOT NULL,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: ScheduleChange; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ScheduleChange" (
+    id text NOT NULL,
+    "sessionId" text NOT NULL,
+    "studentId" text,
+    "participantId" text,
+    "actorId" text NOT NULL,
+    action text NOT NULL,
+    reason text NOT NULL,
+    before jsonb NOT NULL,
+    after jsonb NOT NULL,
+    "requestKey" text NOT NULL,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: SessionParticipant; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."SessionParticipant" (
+    id text NOT NULL,
+    "sessionId" text NOT NULL,
+    "studentId" text NOT NULL,
+    kind public."ParticipantKind" DEFAULT 'REGULAR'::public."ParticipantKind" NOT NULL,
+    "abilityNote" text,
+    attendance public."Attendance" DEFAULT 'PENDING'::public."Attendance" NOT NULL,
+    "bookingStatus" public."BookingStatus" DEFAULT 'BOOKED'::public."BookingStatus" NOT NULL,
+    "categorySnapshot" text,
+    feedback text,
+    "preferenceNote" text,
+    version integer DEFAULT 1 NOT NULL,
+    "membershipCategorySnapshot" public."MembershipCategory",
+    "checkedInAt" timestamp(3) with time zone,
+    "checkedInBy" text,
+    "feedbackSubmittedAt" timestamp(3) with time zone,
+    CONSTRAINT "SessionParticipant_checkin_check" CHECK (((("checkedInAt" IS NULL) AND ("checkedInBy" IS NULL)) OR (("checkedInAt" IS NOT NULL) AND ("checkedInBy" IS NOT NULL) AND (attendance = 'ATTENDED'::public."Attendance")))),
+    CONSTRAINT "SessionParticipant_feedback_attendance_check" CHECK ((("feedbackSubmittedAt" IS NULL) OR (attendance = 'ATTENDED'::public."Attendance")))
+);
+
+
+--
+-- Name: Student; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Student" (
+    id text NOT NULL,
+    name text NOT NULL,
+    "yearLevel" text NOT NULL,
+    "ownerAdminId" text NOT NULL,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "guardianEmail" text,
+    "guardianName" text,
+    "guardianPhone" text,
+    "guardianRelationship" text,
+    "guardianWechat" text,
+    "interestedSubjects" text,
+    "learningGoals" text,
+    "preferredChannel" text,
+    "preferredLanguage" text DEFAULT 'en-AU'::text NOT NULL,
+    "preferredTimes" text,
+    "updatedAt" timestamp(3) with time zone NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    "firstPurchasedAt" timestamp(3) with time zone,
+    "guardianOccupation" text,
+    "guardianAge" integer,
+    "guardianGender" text,
+    gender text,
+    age integer,
+    type public."StudentType" DEFAULT 'TRIAL'::public."StudentType" NOT NULL,
+    CONSTRAINT "Student_age_check" CHECK (((age >= 0) AND (age <= 120))),
+    CONSTRAINT "Student_gender_check" CHECK ((gender = ANY (ARRAY[''::text, 'FEMALE'::text, 'MALE'::text, 'NON_BINARY'::text, 'PREFER_NOT_TO_SAY'::text]))),
+    CONSTRAINT "Student_guardianAge_check" CHECK ((("guardianAge" >= 0) AND ("guardianAge" <= 120))),
+    CONSTRAINT "Student_guardianGender_check" CHECK (("guardianGender" = ANY (ARRAY[''::text, 'FEMALE'::text, 'MALE'::text, 'NON_BINARY'::text, 'PREFER_NOT_TO_SAY'::text]))),
+    CONSTRAINT "Student_type_purchase_check" CHECK ((((type = 'TRIAL'::public."StudentType") AND ("firstPurchasedAt" IS NULL)) OR ((type = 'MEMBER'::public."StudentType") AND ("firstPurchasedAt" IS NOT NULL))))
+);
+
+
+--
+-- Name: StudentAdminLink; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."StudentAdminLink" (
+    "studentId" text NOT NULL,
+    "adminId" text NOT NULL,
+    "createdByAdminId" text,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+
+--
+-- Name: Task; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Task" (
+    id text NOT NULL,
+    type public."TaskType" NOT NULL,
+    "assigneeId" text NOT NULL,
+    "sessionId" text NOT NULL,
+    "participantId" text,
+    status public."TaskStatus" DEFAULT 'OPEN'::public."TaskStatus" NOT NULL,
+    reason text,
+    "sourceSnapshot" jsonb,
+    "availableAt" timestamp(3) with time zone NOT NULL,
+    "dueAt" timestamp(3) with time zone NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    "completedAt" timestamp(3) with time zone,
+    "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "updatedAt" timestamp(3) with time zone NOT NULL,
+    purpose public."TaskPurpose",
+    "resolvedByEntitlementEntryId" text,
+    "followupOutcome" public."FollowupOutcome",
+    CONSTRAINT "Task_followup_outcome_check" CHECK ((("followupOutcome" IS NULL) OR ((type = 'TRIAL_FOLLOWUP'::public."TaskType") AND (status = 'DONE'::public."TaskStatus") AND ("completedAt" IS NOT NULL) AND (("followupOutcome" <> 'PURCHASE_RECORDED'::public."FollowupOutcome") OR ("resolvedByEntitlementEntryId" IS NOT NULL))))),
+    CONSTRAINT "Task_purpose_type_check" CHECK ((((type = 'TRIAL_FOLLOWUP'::public."TaskType") AND (purpose = 'FIRST_PURCHASE'::public."TaskPurpose")) OR ((type = 'TRIAL_FEEDBACK'::public."TaskType") AND (purpose IS NULL) AND ("resolvedByEntitlementEntryId" IS NULL)))),
+    CONSTRAINT "Task_source_type_check" CHECK (("participantId" IS NOT NULL))
+);
+
+
+--
+-- Name: User; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."User" (
+    id text NOT NULL,
+    email text NOT NULL,
+    name text NOT NULL,
+    role public."Role" NOT NULL,
+    "passwordHash" text NOT NULL,
+    status public."AccountStatus" DEFAULT 'ACTIVE'::public."AccountStatus" NOT NULL,
+    "isSuperAdmin" boolean DEFAULT false NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    "disabledAt" timestamp(3) with time zone,
+    CONSTRAINT "User_disabled_time" CHECK (((status = 'DISABLED'::public."AccountStatus") = ("disabledAt" IS NOT NULL))),
+    CONSTRAINT "User_positive_version" CHECK ((version > 0)),
+    CONSTRAINT "User_super_admin" CHECK (((NOT "isSuperAdmin") OR (role = 'ADMIN'::public."Role")))
+);
+
+
+--
+-- Name: AccountAudit AccountAudit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AccountAudit"
+    ADD CONSTRAINT "AccountAudit_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AuthSession AuthSession_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AuthSession"
+    ADD CONSTRAINT "AuthSession_pkey" PRIMARY KEY ("tokenHash");
+
+
+--
+-- Name: ClassGroup ClassGroup_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClassGroup"
+    ADD CONSTRAINT "ClassGroup_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ClassSession ClassSession_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClassSession"
+    ADD CONSTRAINT "ClassSession_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: CommunicationLog CommunicationLog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommunicationLog"
+    ADD CONSTRAINT "CommunicationLog_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Course Course_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Course"
+    ADD CONSTRAINT "Course_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: EntitlementEntry EntitlementEntry_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EntitlementEntry"
+    ADD CONSTRAINT "EntitlementEntry_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: LessonPackage LessonPackage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LessonPackage"
+    ADD CONSTRAINT "LessonPackage_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: MutationReceipt MutationReceipt_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."MutationReceipt"
+    ADD CONSTRAINT "MutationReceipt_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ScheduleChange ScheduleChange_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ScheduleChange"
+    ADD CONSTRAINT "ScheduleChange_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: SessionParticipant SessionParticipant_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SessionParticipant"
+    ADD CONSTRAINT "SessionParticipant_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: StudentAdminLink StudentAdminLink_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentAdminLink"
+    ADD CONSTRAINT "StudentAdminLink_pkey" PRIMARY KEY ("studentId");
+
+
+--
+-- Name: StudentAdminLink StudentAdminLink_student_owner_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentAdminLink"
+    ADD CONSTRAINT "StudentAdminLink_student_owner_key" UNIQUE ("studentId", "adminId");
+
+
+--
+-- Name: Student Student_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Student"
+    ADD CONSTRAINT "Student_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Task Task_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Task"
+    ADD CONSTRAINT "Task_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: User User_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."User"
+    ADD CONSTRAINT "User_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AccountAudit_targetUserId_createdAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "AccountAudit_targetUserId_createdAt_idx" ON public."AccountAudit" USING btree ("targetUserId", "createdAt");
+
+
+--
+-- Name: AuthSession_expiresAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "AuthSession_expiresAt_idx" ON public."AuthSession" USING btree ("expiresAt");
+
+
+--
+-- Name: ClassSession_classGroupId_startsAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "ClassSession_classGroupId_startsAt_idx" ON public."ClassSession" USING btree ("classGroupId", "startsAt");
+
+
+--
+-- Name: ClassSession_startsAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "ClassSession_startsAt_idx" ON public."ClassSession" USING btree ("startsAt");
+
+
+--
+-- Name: ClassSession_teacherId_startsAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "ClassSession_teacherId_startsAt_idx" ON public."ClassSession" USING btree ("teacherId", "startsAt");
+
+
+--
+-- Name: CommunicationLog_studentId_occurredAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "CommunicationLog_studentId_occurredAt_idx" ON public."CommunicationLog" USING btree ("studentId", "occurredAt");
+
+
+--
+-- Name: Course_name_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "Course_name_key" ON public."Course" USING btree (name);
+
+
+--
+-- Name: EntitlementEntry_initial_trial_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "EntitlementEntry_initial_trial_unique" ON public."EntitlementEntry" USING btree ("studentId") WHERE (kind = 'INITIAL_TRIAL'::public."EntitlementKind");
+
+
+--
+-- Name: EntitlementEntry_participantId_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "EntitlementEntry_participantId_key" ON public."EntitlementEntry" USING btree ("participantId");
+
+
+--
+-- Name: EntitlementEntry_sourceKey_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "EntitlementEntry_sourceKey_key" ON public."EntitlementEntry" USING btree ("sourceKey");
+
+
+--
+-- Name: EntitlementEntry_studentId_bucket_createdAt_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "EntitlementEntry_studentId_bucket_createdAt_id_idx" ON public."EntitlementEntry" USING btree ("studentId", bucket, "createdAt", id);
+
+
+--
+-- Name: LessonPackage_active_name_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "LessonPackage_active_name_id_idx" ON public."LessonPackage" USING btree (active, name, id);
+
+
+--
+-- Name: MutationReceipt_userId_operation_key_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "MutationReceipt_userId_operation_key_key" ON public."MutationReceipt" USING btree ("userId", operation, key);
+
+
+--
+-- Name: ScheduleChange_sessionId_createdAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "ScheduleChange_sessionId_createdAt_idx" ON public."ScheduleChange" USING btree ("sessionId", "createdAt");
+
+
+--
+-- Name: SessionParticipant_sessionId_studentId_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "SessionParticipant_sessionId_studentId_key" ON public."SessionParticipant" USING btree ("sessionId", "studentId");
+
+
+--
+-- Name: StudentAdminLink_adminId_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "StudentAdminLink_adminId_idx" ON public."StudentAdminLink" USING btree ("adminId");
+
+
+--
+-- Name: StudentAdminLink_createdByAdminId_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "StudentAdminLink_createdByAdminId_idx" ON public."StudentAdminLink" USING btree ("createdByAdminId");
+
+
+--
+-- Name: Student_ownerAdminId_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "Student_ownerAdminId_idx" ON public."Student" USING btree ("ownerAdminId");
+
+
+--
+-- Name: Task_assigneeId_status_availableAt_dueAt_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "Task_assigneeId_status_availableAt_dueAt_idx" ON public."Task" USING btree ("assigneeId", status, "availableAt", "dueAt");
+
+
+--
+-- Name: Task_feedback_participant_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "Task_feedback_participant_unique" ON public."Task" USING btree ("participantId") WHERE (type = 'TRIAL_FEEDBACK'::public."TaskType");
+
+
+--
+-- Name: Task_trial_participant_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "Task_trial_participant_unique" ON public."Task" USING btree ("participantId") WHERE (type = 'TRIAL_FOLLOWUP'::public."TaskType");
+
+
+--
+-- Name: User_email_casefold_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "User_email_casefold_key" ON public."User" USING btree (lower(email));
+
+
+--
+-- Name: User_email_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "User_email_key" ON public."User" USING btree (email);
+
+
+--
+-- Name: StudentAdminLink StudentAdminLink_guard; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER "StudentAdminLink_guard" BEFORE INSERT OR UPDATE ON public."StudentAdminLink" FOR EACH ROW EXECUTE FUNCTION public.guard_student_admin_link();
+
+
+--
+-- Name: Student Student_sync_admin_link; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER "Student_sync_admin_link" AFTER INSERT OR UPDATE OF "ownerAdminId" ON public."Student" FOR EACH ROW EXECUTE FUNCTION public.sync_student_admin_link();
+
+
+--
+-- Name: AccountAudit AccountAudit_actorId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AccountAudit"
+    ADD CONSTRAINT "AccountAudit_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES public."User"(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: AccountAudit AccountAudit_targetUserId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AccountAudit"
+    ADD CONSTRAINT "AccountAudit_targetUserId_fkey" FOREIGN KEY ("targetUserId") REFERENCES public."User"(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: AuthSession AuthSession_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AuthSession"
+    ADD CONSTRAINT "AuthSession_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: ClassSession ClassSession_classGroupId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClassSession"
+    ADD CONSTRAINT "ClassSession_classGroupId_fkey" FOREIGN KEY ("classGroupId") REFERENCES public."ClassGroup"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: ClassSession ClassSession_courseId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClassSession"
+    ADD CONSTRAINT "ClassSession_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES public."Course"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: ClassSession ClassSession_teacherId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClassSession"
+    ADD CONSTRAINT "ClassSession_teacherId_fkey" FOREIGN KEY ("teacherId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: CommunicationLog CommunicationLog_createdBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommunicationLog"
+    ADD CONSTRAINT "CommunicationLog_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: CommunicationLog CommunicationLog_participantId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommunicationLog"
+    ADD CONSTRAINT "CommunicationLog_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES public."SessionParticipant"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: CommunicationLog CommunicationLog_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommunicationLog"
+    ADD CONSTRAINT "CommunicationLog_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Student"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: CommunicationLog CommunicationLog_taskId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommunicationLog"
+    ADD CONSTRAINT "CommunicationLog_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES public."Task"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: EntitlementEntry EntitlementEntry_actorId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EntitlementEntry"
+    ADD CONSTRAINT "EntitlementEntry_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: EntitlementEntry EntitlementEntry_packageId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EntitlementEntry"
+    ADD CONSTRAINT "EntitlementEntry_packageId_fkey" FOREIGN KEY ("packageId") REFERENCES public."LessonPackage"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: EntitlementEntry EntitlementEntry_participantId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EntitlementEntry"
+    ADD CONSTRAINT "EntitlementEntry_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES public."SessionParticipant"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: EntitlementEntry EntitlementEntry_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."EntitlementEntry"
+    ADD CONSTRAINT "EntitlementEntry_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Student"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: MutationReceipt MutationReceipt_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."MutationReceipt"
+    ADD CONSTRAINT "MutationReceipt_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: ScheduleChange ScheduleChange_actorId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ScheduleChange"
+    ADD CONSTRAINT "ScheduleChange_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: ScheduleChange ScheduleChange_participantId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ScheduleChange"
+    ADD CONSTRAINT "ScheduleChange_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES public."SessionParticipant"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: ScheduleChange ScheduleChange_sessionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ScheduleChange"
+    ADD CONSTRAINT "ScheduleChange_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public."ClassSession"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: ScheduleChange ScheduleChange_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ScheduleChange"
+    ADD CONSTRAINT "ScheduleChange_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Student"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: SessionParticipant SessionParticipant_checkedInBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SessionParticipant"
+    ADD CONSTRAINT "SessionParticipant_checkedInBy_fkey" FOREIGN KEY ("checkedInBy") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: SessionParticipant SessionParticipant_sessionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SessionParticipant"
+    ADD CONSTRAINT "SessionParticipant_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public."ClassSession"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: SessionParticipant SessionParticipant_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."SessionParticipant"
+    ADD CONSTRAINT "SessionParticipant_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Student"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: StudentAdminLink StudentAdminLink_adminId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentAdminLink"
+    ADD CONSTRAINT "StudentAdminLink_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: StudentAdminLink StudentAdminLink_createdByAdminId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentAdminLink"
+    ADD CONSTRAINT "StudentAdminLink_createdByAdminId_fkey" FOREIGN KEY ("createdByAdminId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: StudentAdminLink StudentAdminLink_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentAdminLink"
+    ADD CONSTRAINT "StudentAdminLink_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Student"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: Student Student_admin_link_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Student"
+    ADD CONSTRAINT "Student_admin_link_fkey" FOREIGN KEY (id, "ownerAdminId") REFERENCES public."StudentAdminLink"("studentId", "adminId") DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: Student Student_ownerAdminId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Student"
+    ADD CONSTRAINT "Student_ownerAdminId_fkey" FOREIGN KEY ("ownerAdminId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: Task Task_assigneeId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Task"
+    ADD CONSTRAINT "Task_assigneeId_fkey" FOREIGN KEY ("assigneeId") REFERENCES public."User"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: Task Task_participantId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Task"
+    ADD CONSTRAINT "Task_participantId_fkey" FOREIGN KEY ("participantId") REFERENCES public."SessionParticipant"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: Task Task_resolvedByEntitlementEntryId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Task"
+    ADD CONSTRAINT "Task_resolvedByEntitlementEntryId_fkey" FOREIGN KEY ("resolvedByEntitlementEntryId") REFERENCES public."EntitlementEntry"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- Name: Task Task_sessionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Task"
+    ADD CONSTRAINT "Task_sessionId_fkey" FOREIGN KEY ("sessionId") REFERENCES public."ClassSession"(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+
+COMMIT;

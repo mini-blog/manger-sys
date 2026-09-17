@@ -84,6 +84,18 @@ try {
     sql(`SELECT count(*) FROM pg_tables WHERE tablename='_prisma_migrations'`).trim(),
     '0',
   );
+  const demoCounts = `SELECT concat_ws(',',
+    (SELECT count(*) FROM "User" WHERE "isSuperAdmin"),
+    (SELECT count(*) FROM "User" WHERE id LIKE 'launch-demo-v1-admin-%'),
+    (SELECT count(*) FROM "User" WHERE id LIKE 'launch-demo-v1-teacher-%'),
+    (SELECT count(*) FROM "Student" WHERE id LIKE 'launch-demo-v1-member-%'),
+    (SELECT count(*) FROM "Student" WHERE id LIKE 'launch-demo-v1-trial-%'),
+    (SELECT count(*) FROM "EntitlementEntry" WHERE kind='PURCHASE'),
+    (SELECT count(*) FROM "EntitlementEntry" WHERE kind='TRIAL_GRANT'),
+    (SELECT count(*) FROM "ClassSession"),
+    (SELECT count(*) FROM "Task" WHERE type='TRIAL_FOLLOWUP'))`;
+  assert.equal(sql(demoCounts).trim(), '1,5,20,10,5,10,5,3,1');
+  sql(`UPDATE "Student" SET name='Edited after initialization' WHERE id='launch-demo-v1-trial-01';`);
   sql(`INSERT INTO "User" (id,name,email,"passwordHash",role)
     VALUES ('init-admin','Init admin','init@example.test','unused','ADMIN');
     INSERT INTO "Student" (id,name,"yearLevel","ownerAdminId","updatedAt")
@@ -96,8 +108,10 @@ try {
   docker('restart', id);
   await ready();
   assert.equal(sql(`SELECT count(*) FROM "Student" WHERE id='init-student'`).trim(), '1');
+  assert.equal(sql(demoCounts).trim(), '1,5,20,10,5,10,5,3,1');
+  assert.equal(sql(`SELECT name FROM "Student" WHERE id='launch-demo-v1-trial-01'`).trim(), 'Edited after initialization');
   console.log(
-    'Database image passed: empty-volume schema, latest enums, constraints, ownership trigger and no migration history.',
+    'Database image passed: empty-volume schema and demo data, restart preserves edits/counts, constraints, ownership trigger and no migration history.',
   );
 } finally {
   if (id) docker('rm', '-f', '-v', id);
