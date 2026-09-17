@@ -33,6 +33,7 @@ import { GrantCreditsDialog } from '../components/GrantCreditsDialog';
 import { membershipLabels } from '../lib/membership';
 import { useMembershipRefresh } from '../hooks/useMembershipRefresh';
 import { local } from '../lib/time';
+import { bookingReturn } from '../lib/booking';
 
 type Summary = components['schemas']['EntitlementSummaryDto'];
 export function Entitlements() {
@@ -85,7 +86,9 @@ function EntitlementList() {
   }, [params, selected, setParams]);
   const returnTo = params.get('returnTo');
   const safeReturn =
-    returnTo && /^\/(students|tasks)\/[A-Za-z0-9_-]+$/.test(returnTo) ? returnTo : null;
+    returnTo && /^\/(students|tasks)\/[A-Za-z0-9_-]+$/.test(returnTo)
+      ? returnTo
+      : bookingReturn(returnTo);
   const update = (changes: Record<string, string | undefined>) =>
     setParams((previous) => {
       const next = new URLSearchParams(previous);
@@ -98,7 +101,12 @@ function EntitlementList() {
     <Stack spacing={3}>
       {safeReturn && (
         <Button component={Link} to={safeReturn} sx={{ alignSelf: 'flex-start' }}>
-          ← Back to {safeReturn.startsWith('/students/') ? 'student' : 'follow-up'}
+          ← Back to{' '}
+          {safeReturn.startsWith('/timetable?')
+            ? 'lesson'
+            : safeReturn.startsWith('/students/')
+              ? 'student'
+              : 'follow-up'}
         </Button>
       )}
       <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>

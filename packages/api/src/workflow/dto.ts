@@ -11,6 +11,10 @@ import {
   PARTICIPANT_KINDS,
   FEEDBACK_ATTENDANCES,
   FOLLOW_UP_OUTCOMES,
+  FOLLOWUP_OUTCOMES,
+  FOLLOWUP_REASON_TAGS,
+  type FollowupOutcome,
+  type FollowupReasonTag,
   TASK_STATUSES,
   TASK_TYPES,
   type ParticipantKind,
@@ -195,6 +199,15 @@ export class CommunicationDto {
   @O() @IsOptional() @text(0, 100) relationshipSnapshot?: string;
   @P({ enum: channels }) @IsIn(channels) channel!: string;
   @P() @text(1, 2000) content!: string;
+  @O({ maxLength: 2000 }) @IsOptional() @text(0, 2000) concerns?: string;
+  @O({ maxLength: 1000 }) @IsOptional() @text(0, 1000) coreQuestion?: string;
+  @O({ enum: FOLLOWUP_REASON_TAGS, isArray: true, maxItems: 7, uniqueItems: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(7)
+  @ArrayUnique()
+  @IsIn(FOLLOWUP_REASON_TAGS, { each: true })
+  reasonTags?: FollowupReasonTag[];
   @P() @IsISO8601({ strict: true }) occurredAt!: string;
   @O() @IsOptional() @text(1, 128) taskId?: string;
   @O() @IsOptional() @text(1, 128) participantId?: string;
@@ -301,6 +314,9 @@ export class ParticipantDto extends StudentDto {
   membershipCategory!: MembershipCategory;
   @P() bookingStatus!: string;
   @P() attendance!: string;
+  @P({ type: String, nullable: true, format: 'date-time' }) checkedInAt!: string | null;
+  @P({ type: String, nullable: true }) checkedInBy!: string | null;
+  @P({ type: String, nullable: true, format: 'date-time' }) feedbackSubmittedAt!: string | null;
   @P() version!: number;
   @P() canManage!: boolean;
   @P({ type: String, nullable: true }) feedback!: string | null;
@@ -354,6 +370,9 @@ export class CommunicationViewDto {
   @P() guardianNameSnapshot!: string;
   @P() channel!: string;
   @P() content!: string;
+  @P({ type: String, nullable: true }) concerns!: string | null;
+  @P({ type: String, nullable: true }) coreQuestion!: string | null;
+  @P({ enum: FOLLOWUP_REASON_TAGS, isArray: true }) reasonTags!: string[];
   @P() occurredAt!: string;
   @P() authorName!: string;
   @P({ type: String, nullable: true }) outcome!: string | null;
@@ -395,8 +414,10 @@ export class EligibilityDto {
 }
 export class TaskDto {
   @P() id!: string;
-  @P() type!: string;
-  @P() status!: string;
+  @P({ enum: TASK_TYPES }) type!: TaskType;
+  @P({ enum: TASK_STATUSES }) status!: TaskStatus;
+  @P({ type: String, enum: FOLLOWUP_OUTCOMES, nullable: true })
+  followupOutcome!: FollowupOutcome | null;
   @P() version!: number;
   @P() sessionId!: string;
   @P({ type: String, nullable: true }) participantId!: string | null;

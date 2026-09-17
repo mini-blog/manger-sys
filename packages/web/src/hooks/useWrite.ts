@@ -17,6 +17,7 @@ export function useWrite<M extends Method, P extends WritePath<M>>(
   path: P,
   ids: Record<string, string> = {},
   onSuccess?: (result: { id: string }) => void,
+  onError?: () => void,
 ) {
   const { auth, refresh } = useAuth();
   const client = useQueryClient();
@@ -45,6 +46,7 @@ export function useWrite<M extends Method, P extends WritePath<M>>(
       if (!response.ok) throw apiError(data);
       return data as { id: string };
     },
+    onError,
     onSuccess: (data) => {
       attempt.current = null;
       void client.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'auth' });

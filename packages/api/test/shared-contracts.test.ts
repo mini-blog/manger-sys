@@ -8,6 +8,8 @@ test('shared entitlement enums match persisted values', () => {
     [common.ENTITLEMENT_KINDS, db.EntitlementKind],
     [common.MEMBERSHIP_CATEGORIES, db.MembershipCategory],
     [common.TASK_PURPOSES, db.TaskPurpose],
+    [common.TASK_TYPES, db.TaskType],
+    [common.FOLLOWUP_OUTCOMES, db.FollowupOutcome],
   ] as const)
     assert.deepEqual([...actual].sort(), Object.values(expected).sort());
 });

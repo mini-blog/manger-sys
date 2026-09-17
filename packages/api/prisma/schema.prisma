@@ -38,9 +38,18 @@ enum Attendance {
   NO_SHOW
 }
 enum TaskType {
+  TRIAL_FEEDBACK
   LESSON_FEEDBACK
   TRIAL_FOLLOWUP
 }
+enum FollowupOutcome {
+  PURCHASE_RECORDED
+  INTERESTED
+  CONSIDERING
+  NOT_INTERESTED
+  UNREACHABLE
+}
+
 enum TaskStatus {
   OPEN
   DONE
@@ -85,6 +94,7 @@ model User {
   changes ScheduleChange[]
   receipts MutationReceipt[]
   entitlementEntries EntitlementEntry[]
+  checkedInParticipants SessionParticipant[] @relation("ParticipantCheckInActor")
 }
 
 model AuthSession {
@@ -195,6 +205,10 @@ model SessionParticipant {
   isNewToClass Boolean @default(false)
   bookingStatus BookingStatus @default(BOOKED)
   attendance Attendance @default(PENDING)
+  checkedInAt DateTime? @db.Timestamptz(3)
+  checkedInBy String?
+  checkInActor User? @relation("ParticipantCheckInActor", fields: [checkedInBy], references: [id], onDelete: Restrict)
+  feedbackSubmittedAt DateTime? @db.Timestamptz(3)
   feedback String?
   abilityNote String?
   preferenceNote String?
@@ -219,6 +233,7 @@ model Task {
   participantId String?
   participant SessionParticipant? @relation(fields:[participantId], references:[id])
   status TaskStatus @default(OPEN)
+  followupOutcome FollowupOutcome?
   purpose TaskPurpose?
   resolvedByEntitlementEntryId String?
   resolvedByEntitlementEntry EntitlementEntry? @relation(fields: [resolvedByEntitlementEntryId], references: [id], onDelete: Restrict)
@@ -247,6 +262,9 @@ model CommunicationLog {
   relationshipSnapshot String?
   channel String
   content String
+  concerns String?
+  coreQuestion String?
+  reasonTags String[] @default([])
   outcome String?
   occurredAt DateTime @db.Timestamptz(3)
   createdBy String

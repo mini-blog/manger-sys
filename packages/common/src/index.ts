@@ -17,7 +17,7 @@ export const ATTENDANCE_STATUSES = ['PENDING', 'ATTENDED', 'NO_SHOW'] as const;
 export type Attendance = (typeof ATTENDANCE_STATUSES)[number];
 export const FEEDBACK_ATTENDANCES = ['ATTENDED', 'NO_SHOW'] as const;
 export type FeedbackAttendance = (typeof FEEDBACK_ATTENDANCES)[number];
-export const TASK_TYPES = ['LESSON_FEEDBACK', 'TRIAL_FOLLOWUP'] as const;
+export const TASK_TYPES = ['LESSON_FEEDBACK', 'TRIAL_FOLLOWUP', 'TRIAL_FEEDBACK'] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 export const TASK_STATUSES = ['OPEN', 'DONE', 'CANCELLED'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -76,7 +76,7 @@ export const TASK_PURPOSES = ['FIRST_PURCHASE', 'MEMBER_CARE', 'REBOOKING'] as c
 export type TaskPurpose = (typeof TASK_PURPOSES)[number];
 export const PURCHASE_MODES = ['CUSTOM', 'PACKAGE'] as const;
 export type PurchaseMode = (typeof PURCHASE_MODES)[number];
-// The legacy writable outcome remains above until the coordinated workflow cutover.
+// Legacy write contracts remain until task 07b switches follow-up completion semantics.
 export const ENTITLEMENT_FOLLOW_UP_OUTCOMES = [
   'NO_ANSWER',
   'CONSIDERING',
@@ -104,3 +104,25 @@ export type GuardianGender = (typeof GUARDIAN_GENDERS)[number];
 
 export const STUDENT_GENDERS = ['FEMALE', 'MALE', 'NON_BINARY', 'PREFER_NOT_TO_SAY'] as const;
 export type StudentGender = (typeof STUDENT_GENDERS)[number];
+
+/** Final follow-up result is independent of TaskStatus and student membership. */
+export const MANUAL_FOLLOWUP_OUTCOMES = [
+  'INTERESTED',
+  'CONSIDERING',
+  'NOT_INTERESTED',
+  'UNREACHABLE',
+] as const;
+export type ManualFollowupOutcome = (typeof MANUAL_FOLLOWUP_OUTCOMES)[number];
+/** PURCHASE_RECORDED is reserved for a verified regular-credit grant. */
+export const FOLLOWUP_OUTCOMES = ['PURCHASE_RECORDED', ...MANUAL_FOLLOWUP_OUTCOMES] as const;
+export type FollowupOutcome = (typeof FOLLOWUP_OUTCOMES)[number];
+export const FOLLOWUP_REASON_TAGS = [
+  'PRICE',
+  'TIME',
+  'COURSE_FIT',
+  'TEACHING_FIT',
+  'CHILD_INTEREST',
+  'FAMILY_PLAN',
+  'OTHER',
+] as const;
+export type FollowupReasonTag = (typeof FOLLOWUP_REASON_TAGS)[number];

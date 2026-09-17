@@ -2,7 +2,7 @@ import { GuardianFields, guardianFormFrom, guardianPayload } from '../components
 import { StudentDemographicsFields } from '../components/StudentDemographicsFields';
 import { YEAR_LEVELS } from '@student/common';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -28,12 +28,15 @@ import {
   type CommunicationFields,
 } from '../components/FormParts';
 import { local } from '../lib/time';
+import { bookingReturn } from '../lib/booking';
 import { membershipLabels } from '../lib/membership';
 import { CreditBalance } from '../components/CreditBalances';
 import { useMembershipRefresh } from '../hooks/useMembershipRefresh';
 type Student = components['schemas']['StudentDetailDto'];
 export function StudentDetail() {
   const { id = '' } = useParams();
+  const [params] = useSearchParams();
+  const returnTo = bookingReturn(params.get('returnTo'));
   const query = useQuery({
     queryKey: ['student', id],
     queryFn: async () => {
@@ -47,10 +50,10 @@ export function StudentDetail() {
     <Stack spacing={3}>
       <Button
         component={Link}
-        to={`/students?category=${query.data?.membershipCategory ?? 'TRIAL_STUDENT'}`}
+        to={returnTo ?? `/students?category=${query.data?.membershipCategory ?? 'TRIAL_STUDENT'}`}
         sx={{ alignSelf: 'flex-start' }}
       >
-        ← Students
+        {returnTo ? '← Back to lesson' : '← Students'}
       </Button>
       <Status query={query} />
       {query.data && <StudentProfile key={`${id}:${query.data.version}`} student={query.data} />}

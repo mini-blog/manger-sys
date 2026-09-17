@@ -1132,7 +1132,8 @@
               "type": "string",
               "enum": [
                 "LESSON_FEEDBACK",
-                "TRIAL_FOLLOWUP"
+                "TRIAL_FOLLOWUP",
+                "TRIAL_FEEDBACK"
               ]
             }
           },
@@ -2381,6 +2382,29 @@
           "content": {
             "type": "string"
           },
+          "concerns": {
+            "type": "string",
+            "nullable": true
+          },
+          "coreQuestion": {
+            "type": "string",
+            "nullable": true
+          },
+          "reasonTags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRICE",
+                "TIME",
+                "COURSE_FIT",
+                "TEACHING_FIT",
+                "CHILD_INTEREST",
+                "FAMILY_PLAN",
+                "OTHER"
+              ]
+            }
+          },
           "occurredAt": {
             "type": "string"
           },
@@ -2398,6 +2422,9 @@
           "guardianNameSnapshot",
           "channel",
           "content",
+          "concerns",
+          "coreQuestion",
+          "reasonTags",
           "occurredAt",
           "authorName",
           "outcome"
@@ -2450,6 +2477,31 @@
           },
           "content": {
             "type": "string"
+          },
+          "concerns": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "coreQuestion": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "reasonTags": {
+            "type": "array",
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRICE",
+                "TIME",
+                "COURSE_FIT",
+                "TEACHING_FIT",
+                "CHILD_INTEREST",
+                "FAMILY_PLAN",
+                "OTHER"
+              ]
+            }
           },
           "occurredAt": {
             "type": "string"
@@ -2672,6 +2724,20 @@
           "attendance": {
             "type": "string"
           },
+          "checkedInAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "checkedInBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "feedbackSubmittedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
           "version": {
             "type": "number"
           },
@@ -2702,6 +2768,9 @@
           "membershipCategory",
           "bookingStatus",
           "attendance",
+          "checkedInAt",
+          "checkedInBy",
+          "feedbackSubmittedAt",
           "version",
           "canManage",
           "feedback",
@@ -2909,10 +2978,31 @@
             "type": "string"
           },
           "type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "LESSON_FEEDBACK",
+              "TRIAL_FOLLOWUP",
+              "TRIAL_FEEDBACK"
+            ]
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "DONE",
+              "CANCELLED"
+            ]
+          },
+          "followupOutcome": {
+            "type": "string",
+            "enum": [
+              "PURCHASE_RECORDED",
+              "INTERESTED",
+              "CONSIDERING",
+              "NOT_INTERESTED",
+              "UNREACHABLE"
+            ],
+            "nullable": true
           },
           "version": {
             "type": "number"
@@ -2962,6 +3052,7 @@
           "id",
           "type",
           "status",
+          "followupOutcome",
           "version",
           "sessionId",
           "participantId",
@@ -3010,10 +3101,31 @@
             "type": "string"
           },
           "type": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "LESSON_FEEDBACK",
+              "TRIAL_FOLLOWUP",
+              "TRIAL_FEEDBACK"
+            ]
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "DONE",
+              "CANCELLED"
+            ]
+          },
+          "followupOutcome": {
+            "type": "string",
+            "enum": [
+              "PURCHASE_RECORDED",
+              "INTERESTED",
+              "CONSIDERING",
+              "NOT_INTERESTED",
+              "UNREACHABLE"
+            ],
+            "nullable": true
           },
           "version": {
             "type": "number"
@@ -3084,6 +3196,7 @@
           "id",
           "type",
           "status",
+          "followupOutcome",
           "version",
           "sessionId",
           "participantId",

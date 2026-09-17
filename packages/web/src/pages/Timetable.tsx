@@ -25,7 +25,7 @@ import { ChevronLeft, ChevronRight } from '@mui/icons-material';
 import { DateTime } from 'luxon';
 import { useAuth } from '../auth';
 import { useLessons } from '../hooks/useLessons';
-import { currentWeek, local, ZONE, type Lesson } from '../lib/time';
+import { currentWeek, local, ZONE } from '../lib/time';
 import { QueryError } from '../components/QueryError';
 import { Roster } from '../components/Roster';
 
@@ -45,13 +45,22 @@ export function Timetable() {
   const [view, setView] = useState<'week' | 'list'>(
     params.get('view') === 'list' ? 'list' : 'week',
   );
-  const [selected, setSelected] = useState<Lesson | null>(null);
+  const selectLesson = (id: string | null) =>
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        if (id) next.set('lesson', id);
+        else next.delete('lesson');
+        return next;
+      },
+      { replace: true },
+    );
   const changeWeek = (value: DateTime) => {
     setWeek(value);
     setCourse('');
     setGroup('');
     setTeacher('');
-    setSelected(null);
+    selectLesson(null);
   };
   useEffect(() => {
     setParams(
@@ -74,6 +83,7 @@ export function Timetable() {
   }, [week, search, course, group, teacher, view, setParams]);
   const query = useLessons(week.toISODate()!, search);
   const lessons = query.data ?? [];
+  const selected = lessons.find((lesson) => lesson.id === params.get('lesson')) ?? null;
   const classes = [...new Map(lessons.map((l) => [l.classGroupId, l.className])).entries()].sort(
     (a, b) => a[1].localeCompare(b[1], 'en-AU', { numeric: true }),
   );
@@ -277,7 +287,7 @@ export function Timetable() {
                   </TableCell>
                   <TableCell>{l.trialCount || '—'}</TableCell>
                   <TableCell>
-                    <Button size="small" onClick={() => setSelected(l)}>
+                    <Button size="small" onClick={() => selectLesson(l.id)}>
                       Students
                     </Button>
                   </TableCell>
@@ -331,7 +341,7 @@ export function Timetable() {
                       <Paper
                         component="button"
                         key={l.id}
-                        onClick={() => setSelected(l)}
+                        onClick={() => selectLesson(l.id)}
                         sx={{
                           p: 1.25,
                           width: '100%',
@@ -411,7 +421,7 @@ export function Timetable() {
         </Paper>
       )}
       {creating && <SessionEditor close={() => setCreating(false)} />}
-      <Roster lesson={selected} close={() => setSelected(null)} />
+      <Roster lesson={selected} close={() => selectLesson(null)} />
     </>
   );
 }

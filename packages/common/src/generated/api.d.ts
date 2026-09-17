@@ -642,6 +642,9 @@ export interface components {
             guardianNameSnapshot: string;
             channel: string;
             content: string;
+            concerns: string | null;
+            coreQuestion: string | null;
+            reasonTags: ("PRICE" | "TIME" | "COURSE_FIT" | "TEACHING_FIT" | "CHILD_INTEREST" | "FAMILY_PLAN" | "OTHER")[];
             occurredAt: string;
             authorName: string;
             outcome: string | null;
@@ -658,6 +661,9 @@ export interface components {
             /** @enum {string} */
             channel: "EMAIL" | "PHONE" | "SMS" | "WECHAT" | "IN_PERSON";
             content: string;
+            concerns?: string;
+            coreQuestion?: string;
+            reasonTags?: ("PRICE" | "TIME" | "COURSE_FIT" | "TEACHING_FIT" | "CHILD_INTEREST" | "FAMILY_PLAN" | "OTHER")[];
             occurredAt: string;
             taskId?: string;
             participantId?: string;
@@ -720,6 +726,11 @@ export interface components {
             membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
             bookingStatus: string;
             attendance: string;
+            /** Format: date-time */
+            checkedInAt: string | null;
+            checkedInBy: string | null;
+            /** Format: date-time */
+            feedbackSubmittedAt: string | null;
             version: number;
             canManage: boolean;
             feedback: string | null;
@@ -780,8 +791,12 @@ export interface components {
         };
         TaskDto: {
             id: string;
-            type: string;
-            status: string;
+            /** @enum {string} */
+            type: "LESSON_FEEDBACK" | "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+            /** @enum {string} */
+            status: "OPEN" | "DONE" | "CANCELLED";
+            /** @enum {string|null} */
+            followupOutcome: "PURCHASE_RECORDED" | "INTERESTED" | "CONSIDERING" | "NOT_INTERESTED" | "UNREACHABLE" | null;
             version: number;
             sessionId: string;
             participantId: string | null;
@@ -804,8 +819,12 @@ export interface components {
         };
         TaskDetailDto: {
             id: string;
-            type: string;
-            status: string;
+            /** @enum {string} */
+            type: "LESSON_FEEDBACK" | "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+            /** @enum {string} */
+            status: "OPEN" | "DONE" | "CANCELLED";
+            /** @enum {string|null} */
+            followupOutcome: "PURCHASE_RECORDED" | "INTERESTED" | "CONSIDERING" | "NOT_INTERESTED" | "UNREACHABLE" | null;
             version: number;
             sessionId: string;
             participantId: string | null;
@@ -1567,7 +1586,7 @@ export interface operations {
                 pageSize?: number;
                 q?: string;
                 status?: "OPEN" | "DONE" | "CANCELLED";
-                type?: "LESSON_FEEDBACK" | "TRIAL_FOLLOWUP";
+                type?: "LESSON_FEEDBACK" | "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
                 overdue?: string;
             };
             header?: never;

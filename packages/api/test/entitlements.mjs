@@ -9,6 +9,7 @@ import { verifyBookingCancel } from './booking-cancel.mjs';
 import { verifyBookingRestore } from './booking-restore.mjs';
 import { verifyBookingMove } from './booking-move.mjs';
 import { verifyRosterRead } from './roster-read.mjs';
+import { verifyCheckinContracts } from './checkin-contracts.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
 assert.equal(process.env.ENTITLEMENT_TEST_ISOLATED, 'true', 'Run pnpm test:entitlements.');
 assert.equal(new URL(process.env.DATABASE_URL).pathname, '/entitlement_test');
@@ -43,8 +44,15 @@ try {
     INSERT INTO "ClassSession" (id,"classGroupId","courseId","teacherId","startsAt","endsAt",capacity) VALUES ('legacy-l','legacy-g','legacy-c','legacy-a',now(),now()+interval '1 hour',10);
     INSERT INTO "SessionParticipant" (id,"sessionId","studentId",kind) VALUES ('legacy-p','legacy-l','legacy-s','TRIAL');
     INSERT INTO "Task" (id,type,"assigneeId","sessionId","participantId","availableAt","dueAt","updatedAt") VALUES ('legacy-t','TRIAL_FOLLOWUP','legacy-a','legacy-l','legacy-p',now(),now(),now());`);
+  await client.query(`UPDATE "SessionParticipant" SET attendance='ATTENDED', feedback='Legacy feedback' WHERE id='legacy-p';
+    INSERT INTO "Task" (id,type,"assigneeId","sessionId","availableAt","dueAt","updatedAt") VALUES ('legacy-teacher','LESSON_FEEDBACK','legacy-a','legacy-l',now(),now(),now());
+    INSERT INTO "CommunicationLog" (id,"studentId","taskId","participantId","guardianNameSnapshot",channel,content,outcome,"occurredAt","createdBy") VALUES ('legacy-log','legacy-s','legacy-t','legacy-p','Guardian','PHONE','Old conversation','ENROLLED',now(),'legacy-a');`);
+  const participantBefore = (await client.query('SELECT * FROM "SessionParticipant"')).rows[0];
+  const communicationBefore = (await client.query('SELECT * FROM "CommunicationLog"')).rows[0];
+  const teacherTaskBefore = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-teacher'`))
+    .rows[0];
   const before = (await client.query('SELECT * FROM "Student"')).rows[0];
-  const taskBefore = (await client.query('SELECT * FROM "Task"')).rows[0];
+  const taskBefore = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-t'`)).rows[0];
   for (const name of migrations.slice(2))
     await client.query(await readFile(new URL(`${name}/migration.sql`, root), 'utf8'));
   const {
@@ -70,13 +78,49 @@ try {
   assert.equal(legacyLink.adminId, 'legacy-a');
   assert.equal(legacyLink.createdByAdminId, null);
   assert.deepEqual(after, before);
-  const { purpose, resolvedByEntitlementEntryId, rebookedToParticipantId, ...taskAfter } = (
-    await client.query('SELECT * FROM "Task"')
-  ).rows[0];
+  const {
+    purpose,
+    resolvedByEntitlementEntryId,
+    rebookedToParticipantId,
+    followupOutcome,
+    ...taskAfter
+  } = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-t'`)).rows[0];
   assert.deepEqual(taskAfter, taskBefore);
   assert.equal(purpose, null);
   assert.equal(resolvedByEntitlementEntryId, null);
   assert.equal(rebookedToParticipantId, null);
+  assert.equal(followupOutcome, null);
+  const {
+    checkedInAt,
+    checkedInBy,
+    feedbackSubmittedAt,
+    membershipCategorySnapshot,
+    ...participantAfter
+  } = (await client.query('SELECT * FROM "SessionParticipant"')).rows[0];
+  assert.deepEqual(participantAfter, participantBefore);
+  assert.deepEqual(
+    [checkedInAt, checkedInBy, feedbackSubmittedAt, membershipCategorySnapshot],
+    [null, null, null, null],
+  );
+  const { concerns, coreQuestion, reasonTags, ...communicationAfter } = (
+    await client.query('SELECT * FROM "CommunicationLog"')
+  ).rows[0];
+  assert.deepEqual(communicationAfter, communicationBefore);
+  assert.equal(concerns, null);
+  assert.equal(coreQuestion, null);
+  assert.deepEqual(reasonTags, []);
+  const {
+    purpose: teacherPurpose,
+    resolvedByEntitlementEntryId: teacherEntry,
+    rebookedToParticipantId: teacherTarget,
+    followupOutcome: teacherOutcome,
+    ...teacherAfter
+  } = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-teacher'`)).rows[0];
+  assert.deepEqual(teacherAfter, teacherTaskBefore);
+  assert.deepEqual(
+    [teacherPurpose, teacherEntry, teacherTarget, teacherOutcome],
+    [null, null, null, null],
+  );
   assert.equal(
     (await client.query('SELECT count(*)::int AS n FROM "EntitlementEntry"')).rows[0].n,
     0,
@@ -941,6 +985,20 @@ try {
     now,
     passed,
     teaching: app.get(TeachingService),
+  });
+  await verifyCheckinContracts({
+    db,
+    pool,
+    req,
+    ok,
+    student,
+    participant,
+    a,
+    b,
+    t,
+    now,
+    passed,
+    document,
   });
   await verifyRosterRead({
     db,
