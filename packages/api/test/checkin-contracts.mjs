@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 
-// Schema/read-contract fixtures only: this task does not implement check-in or new feedback commands.
+// Schema/read-contract fixtures; check-in command behavior is covered by checkin-command.mjs.
 export async function verifyCheckinContracts({
   db,
   pool,
@@ -226,7 +226,7 @@ export async function verifyCheckinContracts({
   assert.equal(schemas.CommunicationDto.properties.reasonTags.uniqueItems, true);
   assert.ok(schemas.CommunicationDto.properties.reasonTags.items.enum.includes('PRICE'));
   // No new endpoint is advertised until its actual command is implemented.
-  assert.equal(document.paths['/api/participants/{id}/check-in'], undefined);
+  assert.ok(document.paths['/api/participants/{id}/check-in']);
   assert.equal(document.paths['/api/participants/{id}/feedback'], undefined);
   passed(
     'OpenAPI describes new read and communication contracts without claiming unimplemented endpoints',

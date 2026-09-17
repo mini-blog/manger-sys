@@ -140,6 +140,17 @@ export class WorkflowController {
   ) {
     return this.teaching.add(r.auth.user, id, b, k);
   }
+  @Post('participants/:id/check-in')
+  @write()
+  @ApiCreatedResponse({ type: D.CheckInResultDto })
+  checkIn(
+    @Req() r: AuthRequest,
+    @Param('id') id: string,
+    @Body() b: D.CheckInDto,
+    @Headers('idempotency-key') k?: string,
+  ) {
+    return this.teaching.checkIn(r.auth.user, id, b, k);
+  }
   @Post('participants/:id/cancel') @write() @ApiCreatedResponse({ type: D.ActionDto }) cancel(
     @Req() r: AuthRequest,
     @Param('id') id: string,

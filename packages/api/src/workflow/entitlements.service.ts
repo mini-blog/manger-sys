@@ -39,7 +39,11 @@ export class EntitlementsService {
     readonly clock: Clock,
   ) {}
 
-  async getBalances(tx: Tx, studentId: string): Promise<EntitlementBalances> {
+  async getBalances(
+    tx: Tx,
+    studentId: string,
+    now = this.clock.now(),
+  ): Promise<EntitlementBalances> {
     const entries = await tx.entitlementEntry.groupBy({
       by: ['bucket'],
       where: { studentId },
@@ -51,7 +55,8 @@ export class EntitlementsService {
         studentId,
         bookingStatus: 'BOOKED',
         attendance: 'PENDING',
-        session: { status: 'SCHEDULED' },
+        checkedInAt: null,
+        session: { status: 'SCHEDULED', endsAt: { gt: now } },
       },
       _count: true,
     });
@@ -71,9 +76,10 @@ export class EntitlementsService {
     bucket: EntitlementBucket,
     requiredUnits = 1,
     excludedParticipantId?: string,
+    now = this.clock.now(),
   ) {
     quantity(requiredUnits);
-    const balances = await this.getBalances(tx, studentId);
+    const balances = await this.getBalances(tx, studentId, now);
     let excluded = 0;
     if (excludedParticipantId) {
       const p = required(
@@ -87,13 +93,17 @@ export class EntitlementsService {
         p.kind !== bucket ||
         p.bookingStatus !== 'BOOKED' ||
         p.attendance !== 'PENDING' ||
+        p.checkedInAt !== null ||
         p.session.status !== 'SCHEDULED'
       )
         bad('Only this student’s active reservation in this pool can be excluded.');
-      excluded = 1;
+      excluded = p.session.endsAt > now ? 1 : 0;
     }
     if (balances[bucket].available + excluded < requiredUnits)
-      fail('ENTITLEMENT_INSUFFICIENT', 'Insufficient available lesson credits.');
+      fail(
+        'ENTITLEMENT_INSUFFICIENT',
+        'Insufficient available lesson credits. Ask the responsible admin to add credits.',
+      );
   }
   initialTrialGrant(tx: Tx, studentId: string, actorId: string, sourceKey: string, now: Date) {
     return tx.entitlementEntry.create({
@@ -249,7 +259,7 @@ export class EntitlementsService {
         const student = required(await tx.student.findUnique({ where: { id: body.studentId } }));
         return {
           entry: await this.entryDto(tx, result.entry.id),
-          balances: await this.getBalances(tx, student.id),
+          balances: await this.getBalances(tx, student.id, now),
           type: student.type,
           membershipCategory: membership(student, now).membershipCategory,
           firstPurchasedAt: student.firstPurchasedAt?.toISOString() ?? null,
@@ -294,7 +304,7 @@ export class EntitlementsService {
       studentId: s.id,
       name: s.name,
       yearLevel: s.yearLevel,
-      balances: await this.getBalances(tx, s.id),
+      balances: await this.getBalances(tx, s.id, now),
       type: s.type,
       ...membership(s, now),
       firstPurchasedAt: s.firstPurchasedAt?.toISOString() ?? null,

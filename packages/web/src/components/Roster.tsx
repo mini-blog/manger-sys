@@ -25,7 +25,8 @@ import { useWrite } from '../hooks/useWrite';
 import { label, Status } from './FormParts';
 import { useLessonEditable } from '../hooks/useLessonEditable';
 import { SessionEditor } from './SessionEditor';
-import { FeedbackForm } from '../pages/TaskDetail';
+import { RollCallDialog } from './RollCallDialog';
+import { useRoster } from '../hooks/useRoster';
 import { BookingCredits, useBookingCredits } from './BookingCredits';
 import { bookingLocation } from '../lib/booking';
 type Participant = components['schemas']['ParticipantDto'];
@@ -46,17 +47,8 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
   const admin = auth?.user.role === 'ADMIN';
   const [edit, setEdit] = useState<'edit' | 'cancel' | null>(null),
     [history, setHistory] = useState(false),
-    [feedback, setFeedback] = useState(false);
-  const query = useQuery({
-    queryKey: ['roster', auth?.user.id, id],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/sessions/{id}/participants', {
-        params: { path: { id } },
-      });
-      if (!data) throw apiError(error);
-      return data;
-    },
-  });
+    [rollCall, setRollCall] = useState(false);
+  const query = useRoster(id);
   const r = query.data,
     l = r?.lesson;
   const editableTime = useLessonEditable(l);
@@ -75,8 +67,9 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
           <Close />
         </IconButton>
       </Stack>
+      {rollCall && <RollCallDialog sessionId={id} close={() => setRollCall(false)} />}
       <Status query={query} />
-      {r && l && (
+      {r && l && !query.isError && (
         <>
           <Typography variant="h5">{l.className}</Typography>
           <Typography>
@@ -92,7 +85,7 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
               : l.feedbackSubmittedAt
                 ? 'Feedback submitted'
                 : new Date(l.endsAt) <= new Date()
-                  ? 'Awaiting feedback'
+                  ? 'Ended'
                   : 'Scheduled'}{' '}
             · {l.participantCount} students
           </Typography>
@@ -108,38 +101,34 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
               </>
             )}
             {admin && <Button onClick={() => setHistory(!history)}>Change history</Button>}
-            {!admin && l.status === 'SCHEDULED' && new Date(l.endsAt) <= new Date() && (
-              <Button variant="contained" onClick={() => setFeedback(!feedback)}>
-                {l.feedbackSubmittedAt ? 'View feedback' : 'Record feedback'}
+            {!admin && l.teacherId === auth?.user.id && (
+              <Button variant="contained" onClick={() => setRollCall(true)}>
+                Roll call
               </Button>
             )}
           </Stack>
           {history && <ChangeHistory id={id} />}
           <Divider />
-          {feedback ? (
-            <FeedbackForm key={l.version} roster={r} />
-          ) : (
-            <>
-              {admin && future && <AddStudent lesson={l} participants={r.participants} />}
-              <Typography fontWeight={600}>Students ({r.participants.length})</Typography>
-              {r.participants.map((p) => (
-                <ParticipantCard key={p.participantId} p={p} future={Boolean(future)} />
-              ))}
-              {!r.participants.length && (
-                <Typography color="text.secondary">No students booked yet.</Typography>
-              )}
-              {admin && r.cancelled.length > 0 && (
-                <>
-                  <Divider />
-                  <Typography color="text.secondary">Cancelled bookings</Typography>
-                  {r.cancelled.map((p) => (
-                    <ParticipantCard key={p.participantId} p={p} future={Boolean(future)} />
-                  ))}
-                </>
-              )}
-              {l.summary && <Typography>Class summary: {l.summary}</Typography>}
-            </>
-          )}
+          <>
+            {admin && future && <AddStudent lesson={l} participants={r.participants} />}
+            <Typography fontWeight={600}>Students ({r.participants.length})</Typography>
+            {r.participants.map((p) => (
+              <ParticipantCard key={p.participantId} p={p} future={Boolean(future)} />
+            ))}
+            {!r.participants.length && (
+              <Typography color="text.secondary">No students booked yet.</Typography>
+            )}
+            {admin && r.cancelled.length > 0 && (
+              <>
+                <Divider />
+                <Typography color="text.secondary">Cancelled bookings</Typography>
+                {r.cancelled.map((p) => (
+                  <ParticipantCard key={p.participantId} p={p} future={Boolean(future)} />
+                ))}
+              </>
+            )}
+            {l.summary && <Typography>Class summary: {l.summary}</Typography>}
+          </>
           {edit && <SessionEditor lesson={l} mode={edit} close={() => setEdit(null)} />}
         </>
       )}

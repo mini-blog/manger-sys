@@ -1155,6 +1155,60 @@
         ]
       }
     },
+    "/api/participants/{id}/check-in": {
+      "post": {
+        "operationId": "WorkflowController_checkIn",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckInResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
     "/api/participants/{id}/cancel": {
       "post": {
         "operationId": "WorkflowController_cancel",
@@ -3342,6 +3396,10 @@
           "attendance": {
             "type": "string"
           },
+          "canCheckIn": {
+            "type": "boolean",
+            "description": "Current teacher may attempt check-in based on booking state and start time; available credits are rechecked on submission."
+          },
           "checkedInAt": {
             "type": "string",
             "nullable": true,
@@ -3386,6 +3444,7 @@
           "membershipCategory",
           "bookingStatus",
           "attendance",
+          "canCheckIn",
           "checkedInAt",
           "checkedInBy",
           "feedbackSubmittedAt",
@@ -3439,6 +3498,52 @@
         "required": [
           "studentId",
           "kind"
+        ]
+      },
+      "CheckInDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "CheckInResultDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "sessionVersion": {
+            "type": "number"
+          },
+          "attendance": {
+            "type": "string",
+            "enum": [
+              "ATTENDED"
+            ]
+          },
+          "checkedInAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "checkedInBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "sessionVersion",
+          "attendance",
+          "checkedInAt",
+          "checkedInBy"
         ]
       },
       "VersionDto": {

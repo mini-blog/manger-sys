@@ -9,6 +9,7 @@ import { verifyBookingCancel } from './booking-cancel.mjs';
 import { verifyRosterRead } from './roster-read.mjs';
 import { verifyCheckinContracts } from './checkin-contracts.mjs';
 import { verifySessionCommands } from './session-commands.mjs';
+import { verifyCheckinCommand } from './checkin-command.mjs';
 import { verifySessionCancel } from './session-cancel.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
 assert.equal(process.env.ENTITLEMENT_TEST_ISOLATED, 'true', 'Run pnpm test:entitlements.');
@@ -461,13 +462,13 @@ try {
   await participant(s.id, { bookingStatus: 'CANCELLED' });
   await participant(s.id, { attendance: 'NO_SHOW' });
   let balance = ok(await req(a, `/students/${s.id}/entitlements`), 200).balances;
-  assert.deepEqual(balance.TRIAL, { remaining: 4, reserved: 2, available: 2 });
+  assert.deepEqual(balance.TRIAL, { remaining: 4, reserved: 1, available: 3 });
   assert.deepEqual(balance.REGULAR, { remaining: 0, reserved: 0, available: 0 });
   await assert.rejects(
-    write(a, (tx) => service.assertAvailable(tx, s.id, 'TRIAL', 3)),
+    write(a, (tx) => service.assertAvailable(tx, s.id, 'TRIAL', 4)),
     (e) => e.response.code === 'ENTITLEMENT_INSUFFICIENT',
   );
-  await write(a, (tx) => service.assertAvailable(tx, s.id, 'TRIAL', 3, pending.id));
+  await write(a, (tx) => service.assertAvailable(tx, s.id, 'TRIAL', 4, pending.id));
   await assert.rejects(
     write(a, (tx) => service.assertAvailable(tx, zero.id, 'TRIAL', 1, pending.id)),
   );
@@ -496,7 +497,7 @@ try {
   );
   assert.equal(ok(await req(a, `/students/${s.id}/entitlements`), 200).balances.TRIAL.remaining, 7);
   passed(
-    'independent pools, past pending reservations, exclusion validation and stable concurrent read snapshot',
+    'independent pools, expired reservation release, exclusion validation and stable concurrent read snapshot',
   );
 
   const attended = await participant(s.id, { attendance: 'ATTENDED' });
@@ -1014,6 +1015,23 @@ try {
     courseId,
     groupId,
     now,
+    teaching: app.get(TeachingService),
+    passed,
+    document,
+  });
+  await verifyCheckinCommand({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    login,
+    userIds,
+    courseId,
+    groupId,
+    clock: app.get(Clock),
     teaching: app.get(TeachingService),
     passed,
     document,

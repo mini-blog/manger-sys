@@ -45,6 +45,7 @@ export function participantDto(
   p: FullLesson['participants'][number],
   l: FullLesson,
   u: Actor,
+  now: Date,
 ): D.ParticipantDto {
   const visible = u.role === 'TEACHER' ? l.teacherId === u.id : p.student.ownerAdminId === u.id;
   return {
@@ -57,6 +58,16 @@ export function participantDto(
     ...rosterMembership(p.student, l.startsAt),
     bookingStatus: p.bookingStatus,
     attendance: p.attendance,
+    canCheckIn:
+      u.role === 'TEACHER' &&
+      l.teacherId === u.id &&
+      l.status === 'SCHEDULED' &&
+      l.startsAt <= now &&
+      !l.feedbackSubmittedAt &&
+      p.bookingStatus === 'BOOKED' &&
+      p.attendance === 'PENDING' &&
+      !p.checkedInAt &&
+      !p.feedbackSubmittedAt,
     checkedInAt: p.checkedInAt?.toISOString() ?? null,
     checkedInBy: p.checkedInBy,
     feedbackSubmittedAt: visible ? (p.feedbackSubmittedAt?.toISOString() ?? null) : null,
@@ -155,7 +166,8 @@ export class ReadService {
     );
     if (user.role === 'TEACHER' && l.teacherId !== user.id)
       throw new ForbiddenException('You can only view your assigned lessons.');
-    const rows = l.participants.map((p) => participantDto(p, l, user));
+    const now = this.clock.now();
+    const rows = l.participants.map((p) => participantDto(p, l, user, now));
     const rank: Record<string, number> = { TRIAL: 0, NEW: 1, EXISTING: 2 };
     rows.sort(
       (a, b) =>
@@ -438,25 +450,26 @@ export class ReadService {
     return { items: items.map(taskDto), total, page: q.page, pageSize: q.pageSize };
   }
   async task(user: Actor, id: string): Promise<D.TaskDetailDto> {
+    const now = this.clock.now();
     const t = await assignedTask(this.db, user, id);
     if (
       t.type === 'TRIAL_FEEDBACK' &&
       (t.status !== 'OPEN' ||
         t.session.status !== 'SCHEDULED' ||
-        t.session.endsAt > this.clock.now() ||
+        t.session.endsAt > now ||
         t.participant?.bookingStatus !== 'BOOKED' ||
         !t.participant.checkedInAt ||
         t.participant.attendance !== 'ATTENDED')
     )
       throw new ForbiddenException('This evaluation is not available.');
-    if (t.availableAt > this.clock.now())
+    if (t.availableAt > now)
       throw new ForbiddenException('This task is available after the lesson ends.');
     const p = t.participant ? t.session.participants.find((p) => p.id === t.participantId) : null;
     return {
       ...taskDto(t),
       lesson: lessonDto(t.session),
       student: t.participant ? await this.student(user, t.participant.studentId) : null,
-      participant: p ? participantDto(p, t.session, user) : null,
+      participant: p ? participantDto(p, t.session, user, now) : null,
     };
   }
   async eligibility(user: Actor, id: string, courseId: string): Promise<D.EligibilityDto> {

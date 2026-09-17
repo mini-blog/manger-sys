@@ -292,6 +292,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/participants/{id}/check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["WorkflowController_checkIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/participants/{id}/cancel": {
         parameters: {
             query?: never;
@@ -881,6 +897,8 @@ export interface components {
             membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
             bookingStatus: string;
             attendance: string;
+            /** @description Current teacher may attempt check-in based on booking state and start time; available credits are rechecked on submission. */
+            canCheckIn: boolean;
             /** Format: date-time */
             checkedInAt: string | null;
             checkedInBy: string | null;
@@ -904,6 +922,19 @@ export interface components {
              * @enum {string}
              */
             kind: "TRIAL" | "REGULAR";
+        };
+        CheckInDto: {
+            expectedVersion: number;
+        };
+        CheckInResultDto: {
+            id: string;
+            version: number;
+            sessionVersion: number;
+            /** @enum {string} */
+            attendance: "ATTENDED";
+            /** Format: date-time */
+            checkedInAt: string;
+            checkedInBy: string;
         };
         VersionDto: {
             expectedVersion: number;
@@ -1768,6 +1799,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionDto"];
+                };
+            };
+        };
+    };
+    WorkflowController_checkIn: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description UUID retained when retrying identical input. */
+                "idempotency-key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckInDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckInResultDto"];
                 };
             };
         };

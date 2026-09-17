@@ -12,11 +12,15 @@ type Body<P extends keyof paths, M extends Method> = paths[P][M] extends {
 }
   ? B
   : never;
+type JsonResponse<T> = T extends { content: { 'application/json': infer R } } ? R : never;
+type Result<P extends keyof paths, M extends Method> = paths[P][M] extends { responses: infer R }
+  ? JsonResponse<R[Extract<keyof R, 200 | 201>]>
+  : never;
 export function useWrite<M extends Method, P extends WritePath<M>>(
   method: M,
   path: P,
   ids: Record<string, string> = {},
-  onSuccess?: (result: { id: string }) => void,
+  onSuccess?: (result: Result<P, M>) => void,
   onError?: (error: Error) => void | Promise<void>,
 ) {
   const { auth, refresh } = useAuth();
@@ -46,7 +50,7 @@ export function useWrite<M extends Method, P extends WritePath<M>>(
       const data = await response.json();
       if (response.status === 401) refresh(null);
       if (!response.ok) throw apiError(data, undefined, response.status);
-      return data as { id: string };
+      return data as Result<P, M>;
     },
     onError,
     onSuccess: (data) => {

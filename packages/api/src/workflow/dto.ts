@@ -120,6 +120,17 @@ export class UpdateStudentDto extends PartialType(StudentInputDto) {
   @O() @IsOptional() @IsBoolean() clearAge?: boolean;
   @P() @IsInt() @Min(1) expectedVersion!: number;
 }
+export class CheckInDto {
+  @P() @IsInt() @Min(1) expectedVersion!: number;
+}
+export class CheckInResultDto {
+  @P() id!: string;
+  @P() version!: number;
+  @P() sessionVersion!: number;
+  @P({ enum: ['ATTENDED'] }) attendance!: 'ATTENDED';
+  @P({ format: 'date-time' }) checkedInAt!: string;
+  @P() checkedInBy!: string;
+}
 export class VersionDto {
   @P() @IsInt() @Min(1) expectedVersion!: number;
   @P() @text(1, 500) reason!: string;
@@ -305,6 +316,11 @@ export class ParticipantDto extends StudentDto {
   membershipCategory!: MembershipCategory;
   @P() bookingStatus!: string;
   @P() attendance!: string;
+  @P({
+    description:
+      'Current teacher may attempt check-in based on booking state and start time; available credits are rechecked on submission.',
+  })
+  canCheckIn!: boolean;
   @P({ type: String, nullable: true, format: 'date-time' }) checkedInAt!: string | null;
   @P({ type: String, nullable: true }) checkedInBy!: string | null;
   @P({ type: String, nullable: true, format: 'date-time' }) feedbackSubmittedAt!: string | null;

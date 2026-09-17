@@ -42,7 +42,7 @@ export function Timetable() {
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [course, setCourse] = useState(params.get('course') ?? '');
   const [group, setGroup] = useState(params.get('group') ?? '');
-  const [teacher, setTeacher] = useState(params.get('teacher') ?? '');
+  const [teacher, setTeacher] = useState(admin ? (params.get('teacher') ?? '') : '');
   const [view, setView] = useState<'week' | 'list'>(
     params.get('view') === 'list' ? 'list' : 'week',
   );
@@ -94,7 +94,7 @@ export function Timetable() {
     (l) =>
       (!course || l.courseName === course) &&
       (!group || l.classGroupId === group) &&
-      (!teacher || l.teacherId === teacher),
+      (!admin || !teacher || l.teacherId === teacher),
   );
   const days = Array.from({ length: 7 }, (_, i) => week.plus({ days: i }));
   const hasFilters = Boolean(course || group || teacher || search);

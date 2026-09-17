@@ -24,7 +24,7 @@ import {
   moveRebookingLinks,
   type FollowupEvent,
 } from './followup-policy';
-import { studentCategory } from './membership';
+import { rosterMembership, studentCategory } from './membership';
 export async function teacherTask(tx: Tx, l: FullLesson) {
   const existing = await tx.task.findFirst({ where: { type: 'LESSON_FEEDBACK', sessionId: l.id } });
   const data = {
@@ -80,8 +80,8 @@ export class TeachingService {
   async lesson(tx: Tx, id: string) {
     return required(await tx.classSession.findUnique({ where: { id }, include: lessonInclude }));
   }
-  future(l: FullLesson) {
-    if (l.status !== 'SCHEDULED' || l.startsAt <= this.clock.now() || l.feedbackSubmittedAt)
+  future(l: FullLesson, now = this.clock.now()) {
+    if (l.status !== 'SCHEDULED' || l.startsAt <= now || l.feedbackSubmittedAt)
       fail('SESSION_STARTED', 'Only future, active lessons can be changed.');
   }
   async log(
@@ -287,7 +287,8 @@ export class TeachingService {
     kind: 'TRIAL' | 'REGULAR',
     excluded: string[] = [],
   ) {
-    this.future(l);
+    const now = this.clock.now();
+    this.future(l, now);
     if (kind === 'REGULAR') this.requireMember(s);
     await this.studentConflict(tx, s.id, l, excluded);
     const held = excluded.length
@@ -303,7 +304,7 @@ export class TeachingService {
           select: { id: true },
         })
       : null;
-    await this.entitlements.assertAvailable(tx, s.id, kind, 1, held?.id);
+    await this.entitlements.assertAvailable(tx, s.id, kind, 1, held?.id, now);
   }
 
   add(user: Actor, id: string, body: D.AddParticipantDto, key?: string) {
@@ -552,6 +553,117 @@ export class TeachingService {
       },
     );
   }
+  checkIn(user: Actor, id: string, body: D.CheckInDto, key?: string): Promise<D.CheckInResultDto> {
+    return this.commands.run(
+      user,
+      `participants:${id}:check-in`,
+      key,
+      body,
+      async (tx) => {
+        const p = required(
+          await tx.sessionParticipant.findUnique({ where: { id }, include: { session: true } }),
+        );
+        if (user.role !== 'TEACHER' || p.session.teacherId !== user.id)
+          throw new ForbiddenException('Only the assigned teacher can check in students.');
+      },
+      async (tx) => {
+        const now = this.clock.now();
+        const p = required(
+          await tx.sessionParticipant.findUnique({
+            where: { id },
+            include: { student: true, consumption: true },
+          }),
+        );
+        const l = await this.lesson(tx, p.sessionId);
+        if (l.status !== 'SCHEDULED' || p.bookingStatus !== 'BOOKED')
+          fail('BOOKING_INACTIVE', 'Only active bookings can be checked in.');
+        // A new request key still acknowledges the original successful check-in.
+        // Authorization runs before both receipt replay and this resource-level retry.
+        const result = (
+          participant: { version: number; checkedInAt: Date; checkedInBy: string },
+          sessionVersion: number,
+        ): D.CheckInResultDto => ({
+          id,
+          version: participant.version,
+          sessionVersion,
+          attendance: 'ATTENDED',
+          checkedInAt: participant.checkedInAt.toISOString(),
+          checkedInBy: participant.checkedInBy,
+        });
+        if (p.checkedInAt && p.checkedInBy && p.attendance === 'ATTENDED' && p.consumption)
+          return result(
+            { ...p, checkedInAt: p.checkedInAt, checkedInBy: p.checkedInBy },
+            l.version,
+          );
+        if (
+          p.checkedInAt ||
+          p.consumption ||
+          p.attendance !== 'PENDING' ||
+          p.feedbackSubmittedAt ||
+          l.feedbackSubmittedAt
+        )
+          fail(
+            'RESULT_ALREADY_SUBMITTED',
+            'This booking already has an attendance or teaching result.',
+          );
+        if (now < l.startsAt)
+          fail('LESSON_NOT_STARTED', 'Check-in is available when the lesson starts.');
+        version(p.version, body.expectedVersion);
+        await this.entitlements.assertAvailable(tx, p.studentId, p.kind, 1, p.id, now);
+        const snapshot = rosterMembership(p.student, l.startsAt);
+        const updated = await tx.sessionParticipant.update({
+          where: { id },
+          data: {
+            attendance: 'ATTENDED',
+            checkedInAt: now,
+            checkedInBy: user.id,
+            categorySnapshot: snapshot.category,
+            membershipCategorySnapshot: snapshot.membershipCategory,
+            version: { increment: 1 },
+          },
+        });
+        await tx.entitlementEntry.create({
+          data: {
+            studentId: p.studentId,
+            participantId: id,
+            bucket: p.kind,
+            kind: 'CONSUMPTION',
+            quantity: -1,
+            actorId: user.id,
+            sourceKey: `check-in:${id}`,
+            createdAt: now,
+          },
+        });
+        if (p.student.type === 'MEMBER')
+          await tx.task.updateMany({
+            where: { participantId: id, type: 'TRIAL_FEEDBACK', status: 'OPEN' },
+            data: { status: 'CANCELLED', version: { increment: 1 } },
+          });
+        const session = await tx.classSession.update({
+          where: { id: l.id },
+          data: { version: { increment: 1 } },
+        });
+        await this.log(
+          tx,
+          user,
+          l,
+          'CHECK_IN',
+          'Student checked in',
+          key!,
+          { attendance: p.attendance, checkedInAt: p.checkedInAt },
+          {
+            attendance: 'ATTENDED',
+            checkedInAt: now,
+            checkedInBy: user.id,
+            studentName: p.student.name,
+          },
+          p.studentId,
+          id,
+        );
+        return result({ ...updated, checkedInAt: now, checkedInBy: user.id }, session.version);
+      },
+    );
+  }
   feedback(user: Actor, id: string, body: D.FeedbackDto, key?: string) {
     return this.commands.run(
       user,
@@ -580,6 +692,11 @@ export class TeachingService {
           if (hash === l.feedbackPayloadHash) return { id };
           fail('RESULT_ALREADY_SUBMITTED', 'This lesson already has a different submitted result.');
         }
+        if (l.participants.some((p) => p.checkedInAt))
+          fail(
+            'INDIVIDUAL_FEEDBACK_REQUIRED',
+            'Checked-in students require individual evaluation.',
+          );
         version(l.version, body.expectedVersion);
         const booked = l.participants.filter((p) => p.bookingStatus === 'BOOKED');
         if (
