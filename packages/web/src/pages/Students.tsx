@@ -317,7 +317,7 @@ export function Students() {
                     onChange={(_, checked) => setGiftTrialCredit(checked)}
                   />
                 }
-                label="Include 1 trial lesson"
+                label="Give a trial card (1 lesson)"
               />
             </Stack>
           </DialogContent>

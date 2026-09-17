@@ -231,7 +231,7 @@ export async function verifyBookingCreate({
     [wrongStudent.id, 'TRIAL', 400],
     [wrongSubject.id, 'TRIAL', 400],
     [source.id, 'TRIAL', 409],
-    [independent.id, 'REGULAR', 400],
+    [independent.id, 'REGULAR', 409],
     ['missing-task', 'TRIAL', 404],
     ['', 'TRIAL', 400],
     [null, 'TRIAL', 400],

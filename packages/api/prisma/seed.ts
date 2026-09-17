@@ -64,17 +64,33 @@ async function main() {
     'Liam',
   ];
   const lastNames = ['Chen', 'Wilson', 'Wang', 'Patel', 'Nguyen'];
-  for (let i = 0; i < 60; i++)
-    await prisma.student.upsert({
-      where: { id: `student-${i}` },
-      update: {},
-      create: {
-        id: `student-${i}`,
-        name: `${firstNames[i % 12]} ${lastNames[Math.floor(i / 12)]}`,
-        yearLevel: `Year ${3 + Math.floor((i < 48 ? Math.floor(i / 4) : ((i - 48) * 3) % 12) / 2)}`,
-        ownerAdminId: staff[i % 3][0],
-      },
+  for (let i = 0; i < 60; i++) {
+    const purchasedAt = i < 48 ? new Date(Date.now() - (i % 3 === 0 ? 2 : 30) * 86400000) : null;
+    await prisma.$transaction(async (tx) => {
+      if (await tx.student.findUnique({ where: { id: `student-${i}` } })) return;
+      await tx.student.create({
+        data: {
+          id: `student-${i}`,
+          name: `${firstNames[i % 12]} ${lastNames[Math.floor(i / 12)]}`,
+          yearLevel: `Year ${3 + Math.floor((i < 48 ? Math.floor(i / 4) : ((i - 48) * 3) % 12) / 2)}`,
+          ownerAdminId: staff[i % 3][0],
+          type: purchasedAt ? 'MEMBER' : 'TRIAL',
+          firstPurchasedAt: purchasedAt,
+        },
+      });
+      await tx.entitlementEntry.create({
+        data: {
+          studentId: `student-${i}`,
+          actorId: staff[i % 3][0],
+          sourceKey: `demo-card:student-${i}`,
+          bucket: purchasedAt ? 'REGULAR' : 'TRIAL',
+          kind: purchasedAt ? 'PURCHASE' : 'INITIAL_TRIAL',
+          quantity: purchasedAt ? 20 : 1,
+          createdAt: purchasedAt ?? new Date(),
+        },
+      });
     });
+  }
   const week = DateTime.now().setZone('Australia/Melbourne').startOf('week');
   let count = 0;
   // Generate local calendar times, never add fixed UTC hours across DST.

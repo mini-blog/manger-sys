@@ -246,13 +246,13 @@ function StudentCredits({ student }: { student: Student }) {
         <Stack direction="row" gap={5}>
           <div>
             <Typography variant="body2" color="text.secondary">
-              Trial lessons
+              Trial card
             </Typography>
             <CreditBalance balance={query.data.balances.TRIAL} />
           </div>
           <div>
             <Typography variant="body2" color="text.secondary">
-              Regular lessons
+              Regular card
             </Typography>
             <CreditBalance balance={query.data.balances.REGULAR} />
           </div>

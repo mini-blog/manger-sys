@@ -171,8 +171,9 @@ export class EntitlementsService {
       },
     });
     await tx.student.updateMany({
-      where: { id: input.studentId, firstPurchasedAt: null },
+      where: { id: input.studentId, type: 'TRIAL' },
       data: {
+        type: 'MEMBER',
         firstPurchasedAt: input.now,
         version: { increment: 1 },
       },
@@ -249,7 +250,8 @@ export class EntitlementsService {
         return {
           entry: await this.entryDto(tx, result.entry.id),
           balances: await this.getBalances(tx, student.id),
-          membershipCategory: membership(student.firstPurchasedAt, now).membershipCategory,
+          type: student.type,
+          membershipCategory: membership(student, now).membershipCategory,
           firstPurchasedAt: student.firstPurchasedAt?.toISOString() ?? null,
           closedTaskIds: result.closedTaskIds,
         };
@@ -293,7 +295,8 @@ export class EntitlementsService {
       name: s.name,
       yearLevel: s.yearLevel,
       balances: await this.getBalances(tx, s.id),
-      ...membership(s.firstPurchasedAt, now),
+      type: s.type,
+      ...membership(s, now),
       firstPurchasedAt: s.firstPurchasedAt?.toISOString() ?? null,
     };
   }

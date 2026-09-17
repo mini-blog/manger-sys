@@ -4,6 +4,9 @@ import { createRequire } from 'node:module';
 import { readFile, readdir } from 'node:fs/promises';
 import pg from 'pg';
 import { verifyBookingCreate } from './booking-create.mjs';
+import { verifyStudentType } from './student-type.mjs';
+import { verifyBookingCancel } from './booking-cancel.mjs';
+import { verifyBookingRestore } from './booking-restore.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
 assert.equal(process.env.ENTITLEMENT_TEST_ISOLATED, 'true', 'Run pnpm test:entitlements.');
 assert.equal(new URL(process.env.DATABASE_URL).pathname, '/entitlement_test');
@@ -12,6 +15,7 @@ const { createApp } = require('../dist/bootstrap');
 const { PrismaService } = require('../dist/prisma.service');
 const { Clock, Commands } = require('../dist/common/domain');
 const { EntitlementsService } = require('../dist/workflow/entitlements.service');
+const { TeachingService } = require('../dist/workflow/teaching.service');
 const { ensureFollowup, closeRebooking } = require('../dist/workflow/followup-policy');
 const { hashPassword } = require('../dist/auth/password');
 let groups = 0;
@@ -43,6 +47,7 @@ try {
     await client.query(await readFile(new URL(`${name}/migration.sql`, root), 'utf8'));
   const {
     firstPurchasedAt,
+    type,
     guardianOccupation,
     guardianAge,
     guardianGender,
@@ -51,6 +56,7 @@ try {
     ...after
   } = (await client.query('SELECT * FROM "Student"')).rows[0];
   assert.equal(firstPurchasedAt, null);
+  assert.equal(type, 'TRIAL');
   assert.equal(guardianAge, null);
   assert.equal(age, null);
   assert.equal(gender, null);
@@ -727,6 +733,7 @@ try {
         data: {
           name,
           firstPurchasedAt,
+          type: firstPurchasedAt ? 'MEMBER' : 'TRIAL',
           ownerAdminId,
           yearLevel: 'Year 4',
           guardianEmail: 'private@example.test',
@@ -870,6 +877,7 @@ try {
   passed(
     'direct SQL enforces quantity/pool, initial gift uniqueness, consumption uniqueness, package and history foreign keys',
   );
+  await verifyStudentType({ db, req, ok, student, a, b, t, courseId, groupId, now, passed });
   await verifyBookingCreate({
     db,
     req,
@@ -885,6 +893,37 @@ try {
     write,
     ensureFollowup,
     passed,
+  });
+  await verifyBookingCancel({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    groupId,
+    now,
+    passed,
+    teaching: app.get(TeachingService),
+    write,
+    ensureFollowup,
+  });
+  await verifyBookingRestore({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    otherCourseId,
+    groupId,
+    now,
+    passed,
+    teaching: app.get(TeachingService),
   });
   console.log(
     `Entitlement integration passed (${groups} groups; isolated PostgreSQL; no production migration or real Qwen call).`,

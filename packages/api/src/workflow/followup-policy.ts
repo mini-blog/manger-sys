@@ -1,5 +1,4 @@
 import { bad, fail, json, nextDay17, required, type Tx } from '../common/domain';
-import { membership } from './membership';
 
 export type FollowupEvent = 'TRIAL_COMPLETED' | 'NO_SHOW' | 'CANCELLED';
 /** Call only inside the outer Commands transaction; these helpers never commit. */
@@ -29,16 +28,18 @@ export async function ensureFollowup(
   const existing = await tx.task.findFirst({ where: { type: 'TRIAL_FOLLOWUP', participantId } });
   if (existing && existing.sessionId !== p.sessionId)
     bad('Task source does not match its session.');
-  // Repeated delivery must not reopen an already handled event.
+  const snapshot = existing?.sourceSnapshot as { participantVersion?: number } | null;
+  // A restore followed by cancellation is a new event, even when its reason is unchanged.
+  // Repeated delivery of the same participant version must not reopen a handled task.
   if (
-    existing?.reason === event ||
+    (existing?.reason === event && snapshot?.participantVersion === p.version) ||
     (event === 'TRIAL_COMPLETED' && existing?.resolvedByEntitlementEntryId)
   )
     return existing;
   const purpose =
     event !== 'TRIAL_COMPLETED'
       ? 'REBOOKING'
-      : membership(p.student.firstPurchasedAt, now).membershipCategory === 'TRIAL_STUDENT'
+      : p.student.type === 'TRIAL'
         ? 'FIRST_PURCHASE'
         : 'MEMBER_CARE';
   const l = p.session;
@@ -54,6 +55,7 @@ export async function ensureFollowup(
     availableAt: now,
     dueAt: nextDay17(event === 'CANCELLED' ? now : l.endsAt),
     sourceSnapshot: json({
+      participantVersion: p.version,
       className: l.classGroup.name,
       courseId: l.courseId,
       courseName: l.course.name,
@@ -128,13 +130,12 @@ export async function closeRebooking(
     t.assigneeId !== t.participant.student.ownerAdminId ||
     t.participant.studentId !== target.studentId ||
     t.participant.session.courseId !== target.session.courseId ||
-    target.kind !== 'TRIAL' ||
     target.bookingStatus !== 'BOOKED' ||
     target.attendance !== 'PENDING' ||
     target.session.status !== 'SCHEDULED' ||
     target.session.startsAt <= now
   )
-    bad('Rebooking must reference the same student and subject, with a valid future trial.');
+    bad('Rebooking must reference the same student and subject, with a valid future booking.');
   return tx.task.update({
     where: { id: t.id },
     data: {

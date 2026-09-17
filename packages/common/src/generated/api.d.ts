@@ -488,6 +488,8 @@ export interface components {
             id: string;
             name: string;
             yearLevel: string;
+            /** @enum {string} */
+            type: "TRIAL" | "MEMBER";
             gender: string | null;
             age: number | null;
             responsibleAdmin?: components["schemas"]["StudentAdminViewDto"];
@@ -569,6 +571,8 @@ export interface components {
             id: string;
             name: string;
             yearLevel: string;
+            /** @enum {string} */
+            type: "TRIAL" | "MEMBER";
             gender: string | null;
             age: number | null;
             responsibleAdmin?: components["schemas"]["StudentAdminViewDto"];
@@ -694,8 +698,14 @@ export interface components {
             id: string;
             name: string;
             yearLevel: string;
+            /** @enum {string} */
+            type: "TRIAL" | "MEMBER";
             participantId: string;
-            kind: string;
+            /**
+             * @description Funding card, not student or lesson type.
+             * @enum {string}
+             */
+            kind: "TRIAL" | "REGULAR";
             category: string;
             bookingStatus: string;
             attendance: string;
@@ -712,9 +722,12 @@ export interface components {
         };
         AddParticipantDto: {
             studentId: string;
-            /** @enum {string} */
+            /**
+             * @description Funding card to reserve, independent of student identity. All lessons are ordinary classes.
+             * @enum {string}
+             */
             kind: "TRIAL" | "REGULAR";
-            /** @description Optional open rebooking task for this student and subject; TRIAL only. */
+            /** @description Optional open rebooking task for this student and subject, independent of the funding card. */
             sourceRebookingTaskId?: string;
         };
         VersionDto: {
@@ -919,6 +932,8 @@ export interface components {
             REGULAR: components["schemas"]["PoolBalanceDto"];
         };
         GrantResultDto: {
+            /** @enum {string} */
+            type: "TRIAL" | "MEMBER";
             entry: components["schemas"]["EntryDto"];
             balances: components["schemas"]["BalancesDto"];
             /** @enum {string} */
@@ -927,6 +942,8 @@ export interface components {
             closedTaskIds: string[];
         };
         EntitlementSummaryDto: {
+            /** @enum {string} */
+            type: "TRIAL" | "MEMBER";
             studentId: string;
             name: string;
             yearLevel: string;

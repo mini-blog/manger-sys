@@ -1,10 +1,10 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { Prisma } from '../generated/prisma/client';
-import { Actor, admin, bad, category, Clock, owner, required, Tx } from '../common/domain';
+import { Actor, admin, bad, Clock, owner, required, Tx } from '../common/domain';
 import * as D from './dto';
 import { weekBounds } from '../schedule/time';
-import { membership, membershipBounds } from './membership';
+import { membership, membershipBounds, studentCategory } from './membership';
 import { MEMBERSHIP_CATEGORIES, type MembershipCategory } from '@student/common';
 export const lessonInclude = {
   classGroup: true,
@@ -33,10 +33,8 @@ export function lessonDto(l: FullLesson): D.LessonDto {
     endsAt: l.endsAt.toISOString(),
     capacity: l.capacity,
     participantCount: booked.length,
-    trialCount: booked.filter((p) => p.kind === 'TRIAL').length,
-    newCount: booked.filter(
-      (p) => category(p.kind, p.student.firstEnrolledOn, l.startsAt, p.categorySnapshot) === 'NEW',
-    ).length,
+    trialCount: booked.filter((p) => p.student.type === 'TRIAL').length,
+    newCount: booked.filter((p) => studentCategory(p.student, l.startsAt) === 'NEW').length,
     status: l.status,
     version: l.version,
     feedbackSubmittedAt: l.feedbackSubmittedAt?.toISOString() ?? null,
@@ -55,7 +53,8 @@ export function participantDto(
     yearLevel: p.student.yearLevel,
     participantId: p.id,
     kind: p.kind,
-    category: category(p.kind, p.student.firstEnrolledOn, l.startsAt, p.categorySnapshot),
+    type: p.student.type,
+    category: studentCategory(p.student, l.startsAt),
     bookingStatus: p.bookingStatus,
     attendance: p.attendance,
     version: p.version,
@@ -190,11 +189,18 @@ export class ReadService {
     const now = this.clock.now();
     const bounds = membershipBounds(now);
     const categories: Record<MembershipCategory, Prisma.StudentWhereInput> = {
-      TRIAL_STUDENT: {
-        OR: [{ firstPurchasedAt: null }, { firstPurchasedAt: { gte: bounds.nextMidnight } }],
+      TRIAL_STUDENT: { type: 'TRIAL' },
+      NEW_MEMBER: {
+        type: 'MEMBER',
+        firstPurchasedAt: { gte: bounds.newMemberFrom, lt: bounds.nextMidnight },
       },
-      NEW_MEMBER: { firstPurchasedAt: { gte: bounds.newMemberFrom, lt: bounds.nextMidnight } },
-      MEMBER: { firstPurchasedAt: { lt: bounds.newMemberFrom } },
+      MEMBER: {
+        type: 'MEMBER',
+        OR: [
+          { firstPurchasedAt: { lt: bounds.newMemberFrom } },
+          { firstPurchasedAt: { gte: bounds.nextMidnight } },
+        ],
+      },
     };
     return this.db.$transaction(
       async (tx) => {
@@ -212,6 +218,7 @@ export class ReadService {
             age: true,
             gender: true,
             firstPurchasedAt: true,
+            type: true,
             adminLink: { select: { admin: { select: { id: true, name: true } } } },
           },
           orderBy: [{ name: 'asc' }, { id: 'asc' }],
@@ -222,7 +229,8 @@ export class ReadService {
           items: rows.map(({ firstPurchasedAt, adminLink, ...s }) => ({
             ...s,
             ...(user.role === 'ADMIN' && adminLink ? { responsibleAdmin: adminLink.admin } : {}),
-            membershipCategory: membership(firstPurchasedAt, now).membershipCategory,
+            membershipCategory: membership({ type: s.type, firstPurchasedAt }, now)
+              .membershipCategory,
           })),
           total: q.category
             ? categoryCounts[q.category]
@@ -280,9 +288,10 @@ export class ReadService {
               })
             : [];
         const base: D.StudentDetailDto = {
-          ...membership(s.firstPurchasedAt, now),
+          ...membership(s, now),
           ...(canEdit ? { firstPurchasedAt: s.firstPurchasedAt?.toISOString() ?? null } : {}),
           id: s.id,
+          type: s.type,
           name: s.name,
           yearLevel: s.yearLevel,
           gender: s.gender,

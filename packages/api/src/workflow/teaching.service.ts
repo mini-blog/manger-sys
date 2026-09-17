@@ -1,10 +1,8 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
-import { DateTime } from 'luxon';
 import {
   Actor,
   admin,
   bad,
-  category,
   Clock,
   Commands,
   digest,
@@ -15,14 +13,14 @@ import {
   required,
   Tx,
   version,
-  ZONE,
 } from '../common/domain';
 import { lessonDto, lessonInclude, FullLesson, ownedStudent } from './read.service';
 import { contactReady } from './students.service';
 import * as D from './dto';
 import type { Student } from '../generated/prisma/client';
 import { EntitlementsService } from './entitlements.service';
-import { closeRebooking } from './followup-policy';
+import { closeRebooking, ensureFollowup, type FollowupEvent } from './followup-policy';
+import { studentCategory } from './membership';
 export async function teacherTask(tx: Tx, l: FullLesson) {
   const existing = await tx.task.findFirst({ where: { type: 'LESSON_FEEDBACK', sessionId: l.id } });
   const data = {
@@ -47,26 +45,10 @@ export async function followTask(
   tx: Tx,
   l: FullLesson,
   p: FullLesson['participants'][number],
-  reason: string,
+  reason: FollowupEvent,
   now: Date,
 ) {
-  const existing = await tx.task.findFirst({
-    where: { type: 'TRIAL_FOLLOWUP', participantId: p.id },
-  });
-  const data = {
-    assigneeId: p.student.ownerAdminId,
-    sessionId: l.id,
-    participantId: p.id,
-    status: 'OPEN' as const,
-    reason,
-    sourceSnapshot: json(lessonDto(l)),
-    availableAt: now,
-    dueAt: nextDay17(reason === 'CANCELLED' ? now : l.endsAt),
-    completedAt: null,
-  };
-  return existing
-    ? tx.task.update({ where: { id: existing.id }, data: { ...data, version: { increment: 1 } } })
-    : tx.task.create({ data: { ...data, type: 'TRIAL_FOLLOWUP' } });
+  return ensureFollowup(tx, p.id, reason, now);
 }
 export async function closeOldFollowups(tx: Tx, studentId: string, courseId: string, now: Date) {
   await tx.task.updateMany({
@@ -120,14 +102,12 @@ export class TeachingService {
       },
     });
   }
-  async enrolment(s: Student, l: { startsAt: Date }) {
-    if (!s.firstEnrolledOn)
-      fail('ENROLMENT_REQUIRED', 'Set the formal enrolment date before adding a regular student.');
-    if (
-      DateTime.fromJSDate(l.startsAt, { zone: ZONE }).toISODate()! <
-      s.firstEnrolledOn.toISOString().slice(0, 10)
-    )
-      fail('ENROLMENT_DATE_CONFLICT', 'This lesson is before the enrolment date.');
+  requireMember(s: Student) {
+    if (s.type !== 'MEMBER')
+      fail(
+        'PURCHASE_REQUIRED',
+        'Record a regular credit card purchase before using regular credits.',
+      );
   }
   async studentConflict(
     tx: Tx,
@@ -190,7 +170,7 @@ export class TeachingService {
       fail('SESSION_FULL', 'Capacity cannot be lower than the number of students.');
     for (const p of booked) {
       await this.studentConflict(tx, p.studentId, { ...data, id }, [p.id]);
-      if (p.kind === 'REGULAR') await this.enrolment(p.student, data);
+      if (p.kind === 'REGULAR') this.requireMember(p.student);
     }
   }
   create(user: Actor, body: D.CreateSessionDto, key?: string) {
@@ -286,7 +266,7 @@ export class TeachingService {
             where: { id: p.id },
             data: { bookingStatus: 'CANCELLED', version: { increment: 1 } },
           });
-          if (p.kind === 'TRIAL') await followTask(tx, l, p, 'CANCELLED', this.clock.now());
+          if (p.student.type === 'TRIAL') await followTask(tx, l, p, 'CANCELLED', this.clock.now());
         }
         const changed = await tx.classSession.update({
           where: { id },
@@ -299,7 +279,6 @@ export class TeachingService {
       },
     );
   }
-  // Restore/move retain their existing rules until tasks 04e/04c migrate those commands.
   async eligible(
     tx: Tx,
     s: Student,
@@ -313,27 +292,26 @@ export class TeachingService {
         .length >= l.capacity
     )
       fail('SESSION_FULL', 'This lesson is full.');
-    if (kind === 'TRIAL') {
-      contactReady(s, s.preferredChannel ?? undefined);
-      const rows = await tx.sessionParticipant.findMany({
-        where: {
-          studentId: s.id,
-          kind: 'TRIAL',
-          bookingStatus: 'BOOKED',
-          id: { notIn: excluded },
-          session: { courseId: l.courseId, status: 'SCHEDULED' },
-        },
-      });
-      if (rows.some((p) => p.attendance === 'ATTENDED'))
-        fail('TRIAL_EXHAUSTED', 'The student has already attended a trial for this subject.');
-      if (rows.some((p) => p.attendance === 'PENDING'))
-        fail(
-          'TRIAL_ALREADY_RESERVED',
-          'This student has another trial awaiting attendance or feedback.',
-        );
-    } else await this.enrolment(s, l);
+    contactReady(s);
+    contactReady(s, s.preferredChannel ?? undefined);
+    if (kind === 'REGULAR') this.requireMember(s);
     await this.studentConflict(tx, s.id, l, excluded);
+    const held = excluded.length
+      ? await tx.sessionParticipant.findFirst({
+          where: {
+            id: { in: excluded },
+            studentId: s.id,
+            kind,
+            bookingStatus: 'BOOKED',
+            attendance: 'PENDING',
+            session: { status: 'SCHEDULED' },
+          },
+          select: { id: true },
+        })
+      : null;
+    await this.entitlements.assertAvailable(tx, s.id, kind, 1, held?.id);
   }
+
   add(user: Actor, id: string, body: D.AddParticipantDto, key?: string) {
     return this.commands.run(
       user,
@@ -343,7 +321,6 @@ export class TeachingService {
       async (tx) => {
         await ownedStudent(tx, user, body.studentId);
         if (body.sourceRebookingTaskId) {
-          if (body.kind !== 'TRIAL') bad('Only a trial booking can resolve a rebooking task.');
           const source = required(
             await tx.task.findUnique({ where: { id: body.sourceRebookingTaskId } }),
           );
@@ -392,16 +369,7 @@ export class TeachingService {
     );
   }
   async bookingEligible(tx: Tx, s: Student, l: FullLesson, kind: 'TRIAL' | 'REGULAR') {
-    this.future(l);
-    if (l.participants.filter((p) => p.bookingStatus === 'BOOKED').length >= l.capacity)
-      fail('SESSION_FULL', 'This lesson is full.');
-    // Even an in-person preference must have a contact for a future lesson.
-    contactReady(s);
-    contactReady(s, s.preferredChannel ?? undefined);
-    if (kind === 'REGULAR' && !s.firstPurchasedAt)
-      fail('PURCHASE_REQUIRED', 'Record a formal lesson purchase before booking regular lessons.');
-    await this.studentConflict(tx, s.id, l);
-    await this.entitlements.assertAvailable(tx, s.id, kind);
+    await this.eligible(tx, s, l, kind);
   }
   async participantOwner(tx: Tx, user: Actor, id: string) {
     const p = required(await tx.sessionParticipant.findUnique({ where: { id } }));
@@ -431,15 +399,27 @@ export class TeachingService {
         version(p.version, body.expectedVersion);
         if (p.attendance !== 'PENDING')
           fail('RESULT_ALREADY_SUBMITTED', 'Attendance is already recorded.');
+        let followupTaskId: string | undefined;
         if (action === 'restore') {
           if (p.bookingStatus !== 'CANCELLED')
             fail('ALREADY_BOOKED', 'The student is already booked.');
           await this.eligible(tx, s, l, p.kind, [p.id]);
           await tx.sessionParticipant.update({
             where: { id },
-            data: { bookingStatus: 'BOOKED', version: { increment: 1 } },
+            data: { bookingStatus: 'BOOKED', attendance: 'PENDING', version: { increment: 1 } },
           });
-          if (p.kind === 'TRIAL') await closeOldFollowups(tx, s.id, l.courseId, this.clock.now());
+          const source = await tx.task.findFirst({
+            where: {
+              type: 'TRIAL_FOLLOWUP',
+              participantId: id,
+              status: 'OPEN',
+              purpose: 'REBOOKING',
+            },
+          });
+          if (source) {
+            await closeRebooking(tx, source.id, id, this.clock.now());
+            followupTaskId = source.id;
+          }
         } else {
           if (p.bookingStatus !== 'BOOKED')
             fail('BOOKING_CANCELLED', 'This booking is already cancelled.');
@@ -448,14 +428,10 @@ export class TeachingService {
               where: { id },
               data: { bookingStatus: 'CANCELLED', version: { increment: 1 } },
             });
-            if (p.kind === 'TRIAL')
-              await followTask(
-                tx,
-                l,
-                required(l.participants.find((x) => x.id === id)),
-                'CANCELLED',
-                this.clock.now(),
-              );
+            if (s.type === 'TRIAL') {
+              const task = await ensureFollowup(tx, id, 'CANCELLED', this.clock.now());
+              followupTaskId = task.id;
+            }
           } else {
             const target = await this.lesson(tx, (body as D.MoveParticipantDto).targetSessionId);
             if (target.id === l.id || target.courseId !== l.courseId)
@@ -517,8 +493,13 @@ export class TeachingService {
           action.toUpperCase() + '_BOOKING',
           body.reason,
           key!,
-          { studentName: s.name, bookingStatus: p.bookingStatus },
-          { studentName: s.name, bookingStatus: action === 'restore' ? 'BOOKED' : 'CANCELLED' },
+          { studentName: s.name, bookingStatus: p.bookingStatus, kind: p.kind },
+          {
+            studentName: s.name,
+            bookingStatus: action === 'restore' ? 'BOOKED' : 'CANCELLED',
+            kind: p.kind,
+            ...(followupTaskId ? { followupTaskId } : {}),
+          },
           s.id,
           id,
         );
@@ -564,23 +545,12 @@ export class TeachingService {
           bad('Record attendance for every booked student exactly once.');
         for (const input of students) {
           const p = required(booked.find((p) => p.id === input.participantId));
-          if (p.kind === 'TRIAL' && input.attendance === 'ATTENDED' && !input.feedback.trim())
-            bad('An attended trial requires individual feedback.');
           if (
-            p.kind === 'TRIAL' &&
+            p.student.type === 'TRIAL' &&
             input.attendance === 'ATTENDED' &&
-            (await tx.sessionParticipant.findFirst({
-              where: {
-                id: { not: p.id },
-                studentId: p.studentId,
-                kind: 'TRIAL',
-                attendance: 'ATTENDED',
-                bookingStatus: 'BOOKED',
-                session: { courseId: l.courseId, status: 'SCHEDULED' },
-              },
-            }))
+            !input.feedback.trim()
           )
-            fail('TRIAL_EXHAUSTED', 'This trial has already been used.');
+            bad('An attended trial requires individual feedback.');
           await tx.sessionParticipant.update({
             where: { id: p.id },
             data: {
@@ -588,11 +558,11 @@ export class TeachingService {
               feedback: input.feedback || null,
               abilityNote: input.abilityNote || null,
               preferenceNote: input.preferenceNote || null,
-              categorySnapshot: category(p.kind, p.student.firstEnrolledOn, l.startsAt),
+              categorySnapshot: studentCategory(p.student, l.startsAt),
               version: { increment: 1 },
             },
           });
-          if (p.kind === 'TRIAL')
+          if (p.student.type === 'TRIAL')
             await followTask(
               tx,
               l,

@@ -156,8 +156,8 @@ function EntitlementList() {
                 <TableRow>
                   <TableCell>Student</TableCell>
                   <TableCell>Membership</TableCell>
-                  <TableCell>Trial lessons</TableCell>
-                  <TableCell>Regular lessons</TableCell>
+                  <TableCell>Trial card</TableCell>
+                  <TableCell>Regular card</TableCell>
                   <TableCell align="right">Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -267,8 +267,8 @@ function LedgerDialog({ student, onClose }: { student: Summary; onClose: () => v
           sx={{ my: 1, minWidth: 160 }}
         >
           <MenuItem value="ALL">All credits</MenuItem>
-          <MenuItem value="TRIAL">Trial</MenuItem>
-          <MenuItem value="REGULAR">Regular</MenuItem>
+          <MenuItem value="TRIAL">Trial card</MenuItem>
+          <MenuItem value="REGULAR">Regular card</MenuItem>
         </TextField>
         <Status query={query} />
         {query.data && (

@@ -120,7 +120,7 @@ export function FeedbackForm({ roster: r }: { roster: Roster }) {
       {r.participants.map((p, i) => (
         <Paper
           key={p.participantId}
-          sx={{ p: 3, borderColor: p.kind === 'TRIAL' ? '#dfbd76' : undefined }}
+          sx={{ p: 3, borderColor: p.type === 'TRIAL' ? '#dfbd76' : undefined }}
         >
           <Stack spacing={2}>
             <Stack direction="row" gap={2} alignItems="center">
@@ -128,7 +128,7 @@ export function FeedbackForm({ roster: r }: { roster: Roster }) {
               <Chip
                 size="small"
                 label={label(p.category)}
-                color={p.kind === 'TRIAL' ? 'warning' : 'default'}
+                color={p.type === 'TRIAL' ? 'warning' : 'default'}
               />
               <Typography variant="body2" color="text.secondary">
                 {p.yearLevel}
@@ -164,7 +164,7 @@ export function FeedbackForm({ roster: r }: { roster: Roster }) {
                 minRows={key === 'feedback' ? 2 : 1}
                 disabled={done}
                 required={
-                  key === 'feedback' && p.kind === 'TRIAL' && rows[i].attendance === 'ATTENDED'
+                  key === 'feedback' && p.type === 'TRIAL' && rows[i].attendance === 'ATTENDED'
                 }
                 value={rows[i][key]}
                 onChange={(e) =>

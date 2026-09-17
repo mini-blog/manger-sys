@@ -6,6 +6,8 @@ import {
   ENTITLEMENT_BUCKETS,
   ENTITLEMENT_KINDS,
   MEMBERSHIP_CATEGORIES,
+  STUDENT_TYPES,
+  type StudentType,
   type EntitlementBucket,
   type EntitlementKind,
   type MembershipCategory,
@@ -101,6 +103,7 @@ export class EntryDto {
   @P({ type: PackageSnapshotDto, nullable: true }) packageSnapshot!: PackageSnapshotDto | null;
 }
 export class EntitlementSummaryDto {
+  @P({ enum: STUDENT_TYPES }) type!: StudentType;
   @P() studentId!: string;
   @P() name!: string;
   @P() yearLevel!: string;
@@ -111,6 +114,7 @@ export class EntitlementSummaryDto {
   @P() nextCategoryChangeAt!: string;
 }
 export class GrantResultDto {
+  @P({ enum: STUDENT_TYPES }) type!: StudentType;
   @P({ type: EntryDto }) entry!: EntryDto;
   @P({ type: BalancesDto }) balances!: BalancesDto;
   @P({ enum: MEMBERSHIP_CATEGORIES }) membershipCategory!: MembershipCategory;

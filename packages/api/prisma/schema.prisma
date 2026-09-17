@@ -13,6 +13,11 @@ enum Role {
   TEACHER
 }
 
+enum StudentType {
+  TRIAL
+  MEMBER
+}
+
 enum ParticipantKind {
   REGULAR
   TRIAL
@@ -92,6 +97,7 @@ model AuthSession {
 }
 
 model Student {
+  type StudentType @default(TRIAL)
   gender String?
   age Int?
   id           String @id @default(cuid())
@@ -184,6 +190,7 @@ model SessionParticipant {
   session      ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   studentId    String
   student      Student @relation(fields: [studentId], references: [id])
+  // Funding card only; student identity is Student.type, never inferred from this field.
   kind         ParticipantKind @default(REGULAR)
   isNewToClass Boolean @default(false)
   bookingStatus BookingStatus @default(BOOKED)

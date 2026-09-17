@@ -1768,6 +1768,13 @@
           "yearLevel": {
             "type": "string"
           },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "MEMBER"
+            ]
+          },
           "gender": {
             "type": "string",
             "nullable": true
@@ -1792,6 +1799,7 @@
           "id",
           "name",
           "yearLevel",
+          "type",
           "gender",
           "age",
           "membershipCategory"
@@ -2099,6 +2107,13 @@
           "yearLevel": {
             "type": "string"
           },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "MEMBER"
+            ]
+          },
           "gender": {
             "type": "string",
             "nullable": true
@@ -2198,6 +2213,7 @@
           "id",
           "name",
           "yearLevel",
+          "type",
           "gender",
           "age",
           "membershipCategory",
@@ -2606,11 +2622,23 @@
           "yearLevel": {
             "type": "string"
           },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "MEMBER"
+            ]
+          },
           "participantId": {
             "type": "string"
           },
           "kind": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "REGULAR"
+            ],
+            "description": "Funding card, not student or lesson type."
           },
           "category": {
             "type": "string"
@@ -2644,6 +2672,7 @@
           "id",
           "name",
           "yearLevel",
+          "type",
           "participantId",
           "kind",
           "category",
@@ -2692,11 +2721,12 @@
             "enum": [
               "TRIAL",
               "REGULAR"
-            ]
+            ],
+            "description": "Funding card to reserve, independent of student identity. All lessons are ordinary classes."
           },
           "sourceRebookingTaskId": {
             "type": "string",
-            "description": "Optional open rebooking task for this student and subject; TRIAL only."
+            "description": "Optional open rebooking task for this student and subject, independent of the funding card."
           }
         },
         "required": [
@@ -3551,6 +3581,13 @@
       "GrantResultDto": {
         "type": "object",
         "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "MEMBER"
+            ]
+          },
           "entry": {
             "$ref": "#/components/schemas/EntryDto"
           },
@@ -3577,6 +3614,7 @@
           }
         },
         "required": [
+          "type",
           "entry",
           "balances",
           "membershipCategory",
@@ -3587,6 +3625,13 @@
       "EntitlementSummaryDto": {
         "type": "object",
         "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "MEMBER"
+            ]
+          },
           "studentId": {
             "type": "string"
           },
@@ -3619,6 +3664,7 @@
           }
         },
         "required": [
+          "type",
           "studentId",
           "name",
           "yearLevel",

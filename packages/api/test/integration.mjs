@@ -85,7 +85,7 @@ try {
   const roster = await (
     await request(`/sessions/${trialLesson.id}/participants`, { headers })
   ).json();
-  assert.equal(roster.participants[0].kind, 'TRIAL');
+  assert.equal(roster.participants[0].type, 'TRIAL');
   assert.ok(
     roster.participants.every((p) => !('email' in p) && !('passwordHash' in p)),
     'DTO does not leak unrelated personal data',

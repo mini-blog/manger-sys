@@ -2,6 +2,8 @@ import {
   YEAR_LEVELS,
   GUARDIAN_GENDERS,
   STUDENT_GENDERS,
+  STUDENT_TYPES,
+  type StudentType,
   MEMBERSHIP_CATEGORIES,
   type MembershipCategory,
   COMMUNICATION_CHANNELS,
@@ -153,8 +155,17 @@ export class CancelSessionDto extends VersionDto {
 }
 export class AddParticipantDto {
   @P() @text(1, 128) studentId!: string;
-  @P({ enum: PARTICIPANT_KINDS }) @IsIn(PARTICIPANT_KINDS) kind!: ParticipantKind;
-  @O({ description: 'Optional open rebooking task for this student and subject; TRIAL only.' })
+  @P({
+    enum: PARTICIPANT_KINDS,
+    description:
+      'Funding card to reserve, independent of student identity. All lessons are ordinary classes.',
+  })
+  @IsIn(PARTICIPANT_KINDS)
+  kind!: ParticipantKind;
+  @O({
+    description:
+      'Optional open rebooking task for this student and subject, independent of the funding card.',
+  })
   @IsOptional()
   @text(1, 128)
   sourceRebookingTaskId?: string;
@@ -237,6 +248,7 @@ export class StudentAdminViewDto {
   @P() name!: string;
 }
 export class StudentListItemDto extends StudentDto {
+  @P({ enum: STUDENT_TYPES }) type!: StudentType;
   @P({ type: String, nullable: true }) gender!: string | null;
   @P({ type: Number, nullable: true }) age!: number | null;
   @O({ type: StudentAdminViewDto }) responsibleAdmin?: StudentAdminViewDto;
@@ -277,8 +289,10 @@ export class LessonDto {
   @P({ type: String, nullable: true }) summary!: string | null;
 }
 export class ParticipantDto extends StudentDto {
+  @P({ enum: STUDENT_TYPES }) type!: StudentType;
   @P() participantId!: string;
-  @P() kind!: string;
+  @P({ enum: PARTICIPANT_KINDS, description: 'Funding card, not student or lesson type.' })
+  kind!: string;
   @P() category!: string;
   @P() bookingStatus!: string;
   @P() attendance!: string;

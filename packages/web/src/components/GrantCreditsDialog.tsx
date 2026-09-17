@@ -211,8 +211,8 @@ export function GrantCreditsDialog({
                 }
               }}
             >
-              <ToggleButton value="TRIAL">Trial lessons</ToggleButton>
-              <ToggleButton value="REGULAR">Regular lessons</ToggleButton>
+              <ToggleButton value="TRIAL">Trial card</ToggleButton>
+              <ToggleButton value="REGULAR">Regular card</ToggleButton>
             </ToggleButtonGroup>
             {bucket === 'REGULAR' && (
               <TextField

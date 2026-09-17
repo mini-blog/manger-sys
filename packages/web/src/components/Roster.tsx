@@ -186,11 +186,11 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
   }, [hint.data, hintApplied]);
   const picked = selected;
   const eligibility = useQuery({
-    queryKey: ['eligibility', picked?.id, l.courseId],
-    enabled: Boolean(picked && kind === 'TRIAL'),
+    queryKey: ['entitlements', 'booking', picked?.id],
+    enabled: Boolean(picked),
     queryFn: async () => {
-      const { data, error } = await api.GET('/api/students/{id}/trial-eligibility', {
-        params: { path: { id: picked!.id }, query: { courseId: l.courseId } },
+      const { data, error } = await api.GET('/api/students/{id}/entitlements', {
+        params: { path: { id: picked!.id } },
       });
       if (!data) throw apiError(error);
       return data;
@@ -221,21 +221,22 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
         />
         <Stack direction="row" gap={2}>
           <TextField
-            label="Booking type"
+            label="Lesson credit card"
             select
             value={kind}
             onChange={(e) => setKind(e.target.value as typeof kind)}
             sx={{ flex: 1 }}
           >
-            <MenuItem value="TRIAL">Trial</MenuItem>
-            <MenuItem value="REGULAR">Regular</MenuItem>
+            <MenuItem value="TRIAL">Trial card</MenuItem>
+            <MenuItem value="REGULAR">Regular card</MenuItem>
           </TextField>
           <Button
             variant="contained"
             disabled={
               !picked ||
               save.isPending ||
-              (kind === 'TRIAL' && (!eligibility.data?.available || eligibility.isFetching))
+              !eligibility.data?.balances[kind].available ||
+              eligibility.isFetching
             }
             onClick={() => picked && save.mutate({ studentId: picked.id, kind })}
           >
@@ -247,20 +248,13 @@ function AddStudent({ lesson: l }: { lesson: Lesson }) {
             Edit student details
           </Button>
         )}
-        {kind === 'TRIAL' && picked && (
-          <Typography
-            variant="caption"
-            color={eligibility.data?.available ? 'text.secondary' : 'warning.main'}
-          >
+        {picked && (
+          <Typography variant="caption" color="text.secondary">
             {eligibility.isError
               ? eligibility.error.message
-              : eligibility.data?.available
-                ? '1 trial available'
-                : eligibility.data?.reason === 'TRIAL_EXHAUSTED'
-                  ? 'Trial already attended.'
-                  : eligibility.data?.reason === 'TRIAL_ALREADY_RESERVED'
-                    ? 'A trial is already booked or awaiting attendance.'
-                    : 'Checking trial eligibility…'}
+              : eligibility.data
+                ? `${eligibility.data.balances[kind].available} lessons available on this card`
+                : 'Loading credits…'}
           </Typography>
         )}
       </Stack>

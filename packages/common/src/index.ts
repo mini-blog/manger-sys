@@ -4,6 +4,9 @@ export const SUPPORTED_LANGUAGES = ['en-AU', 'zh-CN'] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export const USER_ROLES = ['ADMIN', 'TEACHER'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
+export const STUDENT_TYPES = ['TRIAL', 'MEMBER'] as const;
+export type StudentType = (typeof STUDENT_TYPES)[number];
+/** Booking funding card, independent of StudentType; all lessons are ordinary classes. */
 export const PARTICIPANT_KINDS = ['TRIAL', 'REGULAR'] as const;
 export type ParticipantKind = (typeof PARTICIPANT_KINDS)[number];
 export const SESSION_STATUSES = ['SCHEDULED', 'CANCELLED'] as const;
