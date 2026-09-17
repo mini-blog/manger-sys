@@ -85,13 +85,6 @@ export class WorkflowController {
   ) {
     return this.students.communicate(r.auth.user, id, b, k);
   }
-  @Get('students/:id/trial-eligibility') @ApiOkResponse({ type: D.EligibilityDto }) eligibility(
-    @Req() r: AuthRequest,
-    @Param('id') id: string,
-    @Query() q: D.EligibilityQuery,
-  ) {
-    return this.read.eligibility(r.auth.user, id, q.courseId);
-  }
   @Get('sessions') @ApiOkResponse({ type: [D.LessonDto] }) sessions(
     @Req() r: AuthRequest,
     @Query() q: D.WeekQuery,
@@ -140,6 +133,17 @@ export class WorkflowController {
   ) {
     return this.teaching.add(r.auth.user, id, b, k);
   }
+  @Post('participants/:id/feedback')
+  @write()
+  @ApiCreatedResponse({ type: D.ActionDto })
+  participantFeedback(
+    @Req() r: AuthRequest,
+    @Param('id') id: string,
+    @Body() b: D.ParticipantFeedbackDto,
+    @Headers('idempotency-key') k?: string,
+  ) {
+    return this.teaching.participantFeedback(r.auth.user, id, b, k);
+  }
   @Post('participants/:id/check-in')
   @write()
   @ApiCreatedResponse({ type: D.CheckInResultDto })
@@ -157,23 +161,7 @@ export class WorkflowController {
     @Body() b: D.VersionDto,
     @Headers('idempotency-key') k?: string,
   ) {
-    return this.teaching.participantAction(r.auth.user, id, 'cancel', b, k);
-  }
-  @Post('participants/:id/restore') @write() @ApiCreatedResponse({ type: D.ActionDto }) restore(
-    @Req() r: AuthRequest,
-    @Param('id') id: string,
-    @Body() b: D.VersionDto,
-    @Headers('idempotency-key') k?: string,
-  ) {
-    return this.teaching.participantAction(r.auth.user, id, 'restore', b, k);
-  }
-  @Post('participants/:id/move') @write() @ApiCreatedResponse({ type: D.ActionDto }) move(
-    @Req() r: AuthRequest,
-    @Param('id') id: string,
-    @Body() b: D.MoveParticipantDto,
-    @Headers('idempotency-key') k?: string,
-  ) {
-    return this.teaching.participantAction(r.auth.user, id, 'move', b, k);
+    return this.teaching.cancelParticipant(r.auth.user, id, b, k);
   }
   @Get('sessions/:id/changes') @ApiOkResponse({ type: D.ChangePageDto }) changes(
     @Req() r: AuthRequest,
@@ -181,14 +169,6 @@ export class WorkflowController {
     @Query() q: D.PageQuery,
   ) {
     return this.read.changes(r.auth.user, id, q);
-  }
-  @Post('sessions/:id/feedback') @write() @ApiCreatedResponse({ type: D.ActionDto }) feedback(
-    @Req() r: AuthRequest,
-    @Param('id') id: string,
-    @Body() b: D.FeedbackDto,
-    @Headers('idempotency-key') k?: string,
-  ) {
-    return this.teaching.feedback(r.auth.user, id, b, k);
   }
   @Get('tasks') @ApiOkResponse({ type: D.TaskPageDto }) listTasks(
     @Req() r: AuthRequest,
@@ -209,14 +189,6 @@ export class WorkflowController {
     @Headers('idempotency-key') k?: string,
   ) {
     return this.tasks.followUp(r.auth.user, id, b, k);
-  }
-  @Post('tasks/:id/reopen') @write() @ApiCreatedResponse({ type: D.ActionDto }) reopen(
-    @Req() r: AuthRequest,
-    @Param('id') id: string,
-    @Body() b: D.ReopenDto,
-    @Headers('idempotency-key') k?: string,
-  ) {
-    return this.tasks.reopen(r.auth.user, id, b, k);
   }
   @Post('tasks/:id/suggestions') @ApiCreatedResponse({ type: D.SuggestionDto }) suggest(
     @Req() r: AuthRequest,

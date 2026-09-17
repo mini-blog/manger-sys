@@ -23,7 +23,7 @@ export async function verifyBookingCancel({
         classGroupId: groupId,
         courseId,
         teacherId: t.user.id,
-        capacity: 1,
+
         startsAt: new Date(+now + offset * 3600000),
         endsAt: new Date(+now + (offset + 1) * 3600000),
       },

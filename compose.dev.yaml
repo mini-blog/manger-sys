@@ -16,7 +16,10 @@ x-api-environment: &api-environment
 
 services:
   db:
-    image: postgres:17-alpine
+    image: studentsys-db:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: packages/database/Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-student}
@@ -27,24 +30,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB']
       interval: 5s
       timeout: 3s
       retries: 15
-  migrate:
-    image: studentsys-api-dev:${IMAGE_TAG:-local}
-    build:
-      context: .
-      dockerfile: packages/api/Dockerfile
-      target: development
-    environment: *api-environment
-    command: ['pnpm', '--filter', '@student/api', 'db:migrate']
-    volumes:
-      - ./packages/api/prisma:/app/packages/api/prisma:ro
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: 'no'
   api:
     image: studentsys-api-dev:${IMAGE_TAG:-local}
     build:
@@ -64,8 +53,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
     healthcheck:
       test:
         [

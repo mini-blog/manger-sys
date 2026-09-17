@@ -44,7 +44,6 @@ enum Attendance {
 }
 enum TaskType {
   TRIAL_FEEDBACK
-  LESSON_FEEDBACK
   TRIAL_FOLLOWUP
 }
 enum FollowupOutcome {
@@ -79,8 +78,6 @@ enum MembershipCategory {
 }
 enum TaskPurpose {
   FIRST_PURCHASE
-  MEMBER_CARE
-  REBOOKING
 }
 
 model User {
@@ -141,7 +138,6 @@ model Student {
   learningGoals String?
   preferredTimes String?
   interestedSubjects String?
-  firstEnrolledOn DateTime? @db.Date
   firstPurchasedAt DateTime? @db.Timestamptz(3)
   entitlementEntries EntitlementEntry[]
   version Int @default(1)
@@ -190,16 +186,11 @@ model ClassSession {
   teacher      User @relation(fields: [teacherId], references: [id])
   startsAt     DateTime @db.Timestamptz(3)
   endsAt       DateTime @db.Timestamptz(3)
-  capacity     Int
   status       SessionStatus @default(SCHEDULED)
   participants SessionParticipant[]
   version Int @default(1)
-  summary String?
-  feedbackSubmittedAt DateTime? @db.Timestamptz(3)
-  feedbackPayloadHash String?
   tasks Task[]
   changes ScheduleChange[] @relation("SourceSession")
-  targetChanges ScheduleChange[] @relation("TargetSession")
   @@index([startsAt])
   @@index([teacherId, startsAt])
   @@index([classGroupId, startsAt])
@@ -213,7 +204,6 @@ model SessionParticipant {
   student      Student @relation(fields: [studentId], references: [id])
   // Funding card only; student identity is Student.type, never inferred from this field.
   kind         ParticipantKind @default(REGULAR)
-  isNewToClass Boolean @default(false)
   bookingStatus BookingStatus @default(BOOKED)
   attendance Attendance @default(PENDING)
   checkedInAt DateTime? @db.Timestamptz(3)
@@ -225,7 +215,6 @@ model SessionParticipant {
   preferenceNote String?
   categorySnapshot String?
   membershipCategorySnapshot MembershipCategory?
-  rebookedTasks Task[] @relation("RebookingTarget")
   consumption EntitlementEntry?
   version Int @default(1)
   tasks Task[]
@@ -248,8 +237,6 @@ model Task {
   purpose TaskPurpose?
   resolvedByEntitlementEntryId String?
   resolvedByEntitlementEntry EntitlementEntry? @relation(fields: [resolvedByEntitlementEntryId], references: [id], onDelete: Restrict)
-  rebookedToParticipantId String?
-  rebookedToParticipant SessionParticipant? @relation("RebookingTarget", fields: [rebookedToParticipantId], references: [id], onDelete: Restrict)
   reason String?
   sourceSnapshot Json?
   availableAt DateTime @db.Timestamptz(3)
@@ -287,8 +274,6 @@ model ScheduleChange {
   id String @id @default(cuid())
   sessionId String
   session ClassSession @relation("SourceSession",fields:[sessionId], references:[id])
-  targetSessionId String?
-  targetSession ClassSession? @relation("TargetSession",fields:[targetSessionId], references:[id])
   studentId String?
   student Student? @relation(fields:[studentId], references:[id])
   participantId String?

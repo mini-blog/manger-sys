@@ -1,3 +1,5 @@
+import { verifyFollowupCompletion } from './followup-completion.mjs';
+import { verifyTaskRead } from './task-read.mjs';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
@@ -9,6 +11,7 @@ import { verifyBookingCancel } from './booking-cancel.mjs';
 import { verifyRosterRead } from './roster-read.mjs';
 import { verifyCheckinContracts } from './checkin-contracts.mjs';
 import { verifySessionCommands } from './session-commands.mjs';
+import { verifyParticipantFeedback } from './participant-feedback.mjs';
 import { verifyCheckinCommand } from './checkin-command.mjs';
 import { verifySessionCancel } from './session-cancel.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
@@ -20,7 +23,24 @@ const { PrismaService } = require('../dist/prisma.service');
 const { Clock, Commands } = require('../dist/common/domain');
 const { EntitlementsService } = require('../dist/workflow/entitlements.service');
 const { TeachingService } = require('../dist/workflow/teaching.service');
-const { ensureFollowup, closeRebooking } = require('../dist/workflow/followup-policy');
+const { ensureFirstPurchaseFollowup } = require('../dist/workflow/followup-policy');
+const ensureFollowup = async (tx, id, event, now) => {
+  assert.equal(event, 'TRIAL_COMPLETED');
+  const p = await tx.sessionParticipant.findUniqueOrThrow({
+    where: { id },
+    include: { session: true },
+  });
+  await tx.sessionParticipant.update({
+    where: { id },
+    data: {
+      checkedInAt: now,
+      checkedInBy: p.session.teacherId,
+      feedbackSubmittedAt: now,
+      feedback: 'Fixture evaluation',
+    },
+  });
+  return ensureFirstPurchaseFollowup(tx, id, now);
+};
 const { hashPassword } = require('../dist/auth/password');
 let groups = 0;
 const passed = (name) => {
@@ -29,112 +49,7 @@ const passed = (name) => {
 };
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-// Verify expansion with existing rows, rather than only starting from an empty schema.
-const client = await pool.connect();
-try {
-  await client.query('CREATE SCHEMA upgrade_test');
-  await client.query('SET search_path TO upgrade_test');
-  const root = new URL('../prisma/migrations/', import.meta.url);
-  const migrations = (await readdir(root)).filter((n) => /^\d/.test(n)).sort();
-  for (const name of migrations.slice(0, 2))
-    await client.query(await readFile(new URL(`${name}/migration.sql`, root), 'utf8'));
-  await client.query(`INSERT INTO "User" VALUES ('legacy-a', 'legacy@test.invalid', 'Legacy', 'ADMIN', 'fixture');
-    INSERT INTO "Student" (id, name, "yearLevel", "ownerAdminId", "firstEnrolledOn", "updatedAt") VALUES ('legacy-s', 'Existing', 'Year 4', 'legacy-a', '2026-09-01', now());
-    INSERT INTO "Course" VALUES ('legacy-c', 'Math');
-    INSERT INTO "ClassGroup" VALUES ('legacy-g', 'Group', 'Year 4');
-    INSERT INTO "ClassSession" (id,"classGroupId","courseId","teacherId","startsAt","endsAt",capacity) VALUES ('legacy-l','legacy-g','legacy-c','legacy-a',now(),now()+interval '1 hour',10);
-    INSERT INTO "SessionParticipant" (id,"sessionId","studentId",kind) VALUES ('legacy-p','legacy-l','legacy-s','TRIAL');
-    INSERT INTO "Task" (id,type,"assigneeId","sessionId","participantId","availableAt","dueAt","updatedAt") VALUES ('legacy-t','TRIAL_FOLLOWUP','legacy-a','legacy-l','legacy-p',now(),now(),now());`);
-  await client.query(`UPDATE "SessionParticipant" SET attendance='ATTENDED', feedback='Legacy feedback' WHERE id='legacy-p';
-    INSERT INTO "Task" (id,type,"assigneeId","sessionId","availableAt","dueAt","updatedAt") VALUES ('legacy-teacher','LESSON_FEEDBACK','legacy-a','legacy-l',now(),now(),now());
-    INSERT INTO "CommunicationLog" (id,"studentId","taskId","participantId","guardianNameSnapshot",channel,content,outcome,"occurredAt","createdBy") VALUES ('legacy-log','legacy-s','legacy-t','legacy-p','Guardian','PHONE','Old conversation','ENROLLED',now(),'legacy-a');`);
-  const participantBefore = (await client.query('SELECT * FROM "SessionParticipant"')).rows[0];
-  const communicationBefore = (await client.query('SELECT * FROM "CommunicationLog"')).rows[0];
-  const teacherTaskBefore = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-teacher'`))
-    .rows[0];
-  const before = (await client.query('SELECT * FROM "Student"')).rows[0];
-  const taskBefore = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-t'`)).rows[0];
-  for (const name of migrations.slice(2))
-    await client.query(await readFile(new URL(`${name}/migration.sql`, root), 'utf8'));
-  const {
-    firstPurchasedAt,
-    type,
-    guardianOccupation,
-    guardianAge,
-    guardianGender,
-    gender,
-    age,
-    ...after
-  } = (await client.query('SELECT * FROM "Student"')).rows[0];
-  assert.equal(firstPurchasedAt, null);
-  assert.equal(type, 'TRIAL');
-  assert.equal(guardianAge, null);
-  assert.equal(age, null);
-  assert.equal(gender, null);
-  assert.equal(guardianGender, null);
-  assert.equal(guardianOccupation, null);
-  const legacyLink = (
-    await client.query('SELECT * FROM "StudentAdminLink" WHERE "studentId" = $1', ['legacy-s'])
-  ).rows[0];
-  assert.equal(legacyLink.adminId, 'legacy-a');
-  assert.equal(legacyLink.createdByAdminId, null);
-  assert.deepEqual(after, before);
-  const {
-    purpose,
-    resolvedByEntitlementEntryId,
-    rebookedToParticipantId,
-    followupOutcome,
-    ...taskAfter
-  } = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-t'`)).rows[0];
-  assert.deepEqual(taskAfter, taskBefore);
-  assert.equal(purpose, null);
-  assert.equal(resolvedByEntitlementEntryId, null);
-  assert.equal(rebookedToParticipantId, null);
-  assert.equal(followupOutcome, null);
-  const {
-    checkedInAt,
-    checkedInBy,
-    feedbackSubmittedAt,
-    membershipCategorySnapshot,
-    ...participantAfter
-  } = (await client.query('SELECT * FROM "SessionParticipant"')).rows[0];
-  assert.deepEqual(participantAfter, participantBefore);
-  assert.deepEqual(
-    [checkedInAt, checkedInBy, feedbackSubmittedAt, membershipCategorySnapshot],
-    [null, null, null, null],
-  );
-  const { concerns, coreQuestion, reasonTags, ...communicationAfter } = (
-    await client.query('SELECT * FROM "CommunicationLog"')
-  ).rows[0];
-  assert.deepEqual(communicationAfter, communicationBefore);
-  assert.equal(concerns, null);
-  assert.equal(coreQuestion, null);
-  assert.deepEqual(reasonTags, []);
-  const {
-    purpose: teacherPurpose,
-    resolvedByEntitlementEntryId: teacherEntry,
-    rebookedToParticipantId: teacherTarget,
-    followupOutcome: teacherOutcome,
-    ...teacherAfter
-  } = (await client.query(`SELECT * FROM "Task" WHERE id='legacy-teacher'`)).rows[0];
-  assert.deepEqual(teacherAfter, teacherTaskBefore);
-  assert.deepEqual(
-    [teacherPurpose, teacherEntry, teacherTarget, teacherOutcome],
-    [null, null, null, null],
-  );
-  assert.equal(
-    (await client.query('SELECT count(*)::int AS n FROM "EntitlementEntry"')).rows[0].n,
-    0,
-  );
-  passed(
-    'incremental migrations preserve existing student, task and enrolment data without invented credits',
-  );
-} finally {
-  await client.query('SET search_path TO public');
-  await client.query('DROP SCHEMA upgrade_test CASCADE');
-  client.release();
-}
-
+// Development-only final schema; legacy import coverage retired in 09d.
 const { app, document } = await createApp();
 app.useLogger(false);
 const db = app.get(PrismaService),
@@ -192,7 +107,7 @@ async function participant(studentId, extra = {}, sessionExtra = {}) {
       classGroupId: groupId,
       courseId,
       teacherId: userIds[2],
-      capacity: 10,
+
       startsAt: new Date(now.getTime() + 3600000),
       endsAt: new Date(now.getTime() + 7200000),
       ...sessionExtra,
@@ -502,12 +417,9 @@ try {
 
   const attended = await participant(s.id, { attendance: 'ATTENDED' });
   const attended2 = await participant(s.id, { attendance: 'ATTENDED' });
-  const noShow = await participant(s.id, { attendance: 'NO_SHOW' });
   const sale = await write(a, (tx) => ensureFollowup(tx, attended.id, 'TRIAL_COMPLETED', now));
   const sale2 = await write(a, (tx) => ensureFollowup(tx, attended2.id, 'TRIAL_COMPLETED', now));
-  const rebook = await write(a, (tx) => ensureFollowup(tx, noShow.id, 'NO_SHOW', now));
   assert.equal(sale.purpose, 'FIRST_PURCHASE');
-  assert.equal(rebook.purpose, 'REBOOKING');
   assert.equal(
     (await write(a, (tx) => ensureFollowup(tx, attended.id, 'TRIAL_COMPLETED', now))).id,
     sale.id,
@@ -535,7 +447,6 @@ try {
   assert.equal(purchased.firstPurchasedAt, purchased.entry.createdAt);
   assert.equal(purchased.membershipCategory, 'NEW_MEMBER');
   assert.deepEqual(purchased.closedTaskIds.sort(), [sale.id, sale2.id].sort());
-  assert.equal((await db.task.findUnique({ where: { id: rebook.id } })).status, 'OPEN');
   assert.equal(
     (await db.task.findUnique({ where: { id: sale.id } })).resolvedByEntitlementEntryId,
     purchased.entry.id,
@@ -546,12 +457,12 @@ try {
   );
   assert.equal((await db.task.findUnique({ where: { id: sale.id } })).reason, 'PURCHASE_RECORDED');
   assert.equal(
-    (await write(a, (tx) => ensureFollowup(tx, attended.id, 'TRIAL_COMPLETED', now))).status,
-    'DONE',
+    await write(a, (tx) => ensureFollowup(tx, attended.id, 'TRIAL_COMPLETED', now)),
+    null,
   );
   const careP = await participant(s.id, { attendance: 'ATTENDED' });
   const care = await write(a, (tx) => ensureFollowup(tx, careP.id, 'TRIAL_COMPLETED', now));
-  assert.equal(care.purpose, 'MEMBER_CARE');
+  assert.equal(care, null);
   const previousVersion = (await db.student.findUnique({ where: { id: s.id } })).version;
   now = new Date('2028-09-12T00:00:00Z');
   const renewal = ok(
@@ -566,10 +477,8 @@ try {
   assert.equal(renewal.membershipCategory, 'MEMBER');
   assert.deepEqual(renewal.closedTaskIds, []);
   assert.equal((await db.student.findUnique({ where: { id: s.id } })).version, previousVersion);
-  assert.equal((await db.task.findUnique({ where: { id: care.id } })).status, 'OPEN');
   const trialMember = ok(await req(a, '/entitlements/grants', trialBody));
   assert.equal(trialMember.firstPurchasedAt, purchased.firstPurchasedAt);
-  assert.equal((await db.task.findUnique({ where: { id: care.id } })).status, 'OPEN');
   // Buy first without taking a trial; the gift remains untouched.
   const direct = await student(a);
   const directPurchase = ok(
@@ -599,28 +508,6 @@ try {
   );
   passed(
     'first purchase and follow-up closure are atomic; renewal, trial top-up and zero balance preserve membership',
-  );
-
-  const target = await participant(s.id);
-  const otherStudentTarget = await participant(foreign.id);
-  const otherSubjectTarget = await participant(s.id, {}, { courseId: otherCourseId });
-  await assert.rejects(write(a, (tx) => closeRebooking(tx, rebook.id, otherStudentTarget.id, now)));
-  await assert.rejects(write(a, (tx) => closeRebooking(tx, rebook.id, otherSubjectTarget.id, now)));
-  await write(a, (tx) => closeRebooking(tx, rebook.id, target.id, now));
-  assert.equal(
-    (await db.task.findUnique({ where: { id: rebook.id } })).rebookedToParticipantId,
-    target.id,
-  );
-  assert.equal((await db.task.findUnique({ where: { id: care.id } })).status, 'OPEN');
-  await db.sessionParticipant.update({
-    where: { id: noShow.id },
-    data: { bookingStatus: 'CANCELLED' },
-  });
-  const reopened = await write(a, (tx) => ensureFollowup(tx, noShow.id, 'CANCELLED', now));
-  assert.equal(reopened.rebookedToParticipantId, null);
-  assert.equal(reopened.status, 'OPEN');
-  passed(
-    'rebooking closes only an explicit same-student/same-subject source; new events clear stale resolutions',
   );
 
   const pack = await db.lessonPackage.create({
@@ -905,7 +792,7 @@ try {
   const teacherSession = await db.classSession.findFirst({ where: { id: pending.sessionId } });
   await constraint(() =>
     pool.query(
-      `INSERT INTO "Task" (id,type,"assigneeId","sessionId",purpose,"availableAt","dueAt","updatedAt") VALUES ($1,'LESSON_FEEDBACK',$2,$3,'FIRST_PURCHASE',now(),now(),now())`,
+      `INSERT INTO "Task" (id,type,"assigneeId","sessionId",purpose,"availableAt","dueAt","updatedAt") VALUES ($1,'TRIAL_FEEDBACK',$2,$3,'FIRST_PURCHASE',now(),now(),now())`,
       [randomUUID(), t.user.id, teacherSession.id],
     ),
   );
@@ -1035,6 +922,50 @@ try {
     teaching: app.get(TeachingService),
     passed,
     document,
+  });
+  await verifyParticipantFeedback({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    login,
+    userIds,
+    courseId,
+    groupId,
+    clock: app.get(Clock),
+    teaching: app.get(TeachingService),
+    passed,
+    document,
+  });
+  await verifyTaskRead({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    groupId,
+    clock: app.get(Clock),
+    passed,
+  });
+  await verifyFollowupCompletion({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    groupId,
+    clock: app.get(Clock),
+    passed,
+    studentsService: app.get(require('../dist/workflow/students.service').StudentsService),
   });
   console.log(
     `Entitlement integration passed (${groups} groups; isolated PostgreSQL; no production migration or real Qwen call).`,

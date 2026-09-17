@@ -25,7 +25,7 @@ export async function verifySessionCancel({
         classGroupId: groupId,
         courseId,
         teacherId: t.user.id,
-        capacity: 10,
+
         startsAt: `${date}T10:00:00+11:00`,
         endsAt: `${date}T11:00:00+11:00`,
       }),
@@ -197,7 +197,7 @@ export async function verifySessionCancel({
         students: [],
       })
     ).status,
-    409,
+    404,
   );
   assert.equal(
     (
@@ -241,9 +241,6 @@ export async function verifySessionCancel({
     data: { startsAt: now, endsAt: new Date(now.getTime() + 3600000) },
   });
   assert.equal((await cancel(active, 1)).data.code, 'SESSION_STARTED');
-  const submitted = await create();
-  await db.classSession.update({ where: { id: submitted.id }, data: { feedbackSubmittedAt: now } });
-  assert.equal((await cancel(submitted, 1)).status, 409);
   for (const facts of [
     { attendance: 'ATTENDED', checkedInAt: now, checkedInBy: t.user.id },
     { attendance: 'ATTENDED', feedbackSubmittedAt: now },

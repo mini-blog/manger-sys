@@ -196,22 +196,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/students/{id}/trial-eligibility": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["WorkflowController_eligibility"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/sessions": {
         parameters: {
             query?: never;
@@ -292,6 +276,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/participants/{id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["WorkflowController_participantFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/participants/{id}/check-in": {
         parameters: {
             query?: never;
@@ -324,38 +324,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/participants/{id}/restore": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["WorkflowController_restore"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/participants/{id}/move": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["WorkflowController_move"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/sessions/{id}/changes": {
         parameters: {
             query?: never;
@@ -366,22 +334,6 @@ export interface paths {
         get: operations["WorkflowController_changes"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/sessions/{id}/feedback": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["WorkflowController_feedback"];
         delete?: never;
         options?: never;
         head?: never;
@@ -430,22 +382,6 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["WorkflowController_followUp"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/tasks/{id}/reopen": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["WorkflowController_reopen"];
         delete?: never;
         options?: never;
         head?: never;
@@ -717,14 +653,11 @@ export interface components {
             teacherId: string;
             startsAt: string;
             endsAt: string;
-            capacity: number;
             participantCount: number;
             trialCount: number;
             newCount: number;
             status: string;
             version: number;
-            feedbackSubmittedAt: string | null;
-            summary: string | null;
         };
         TeachingRecordDto: {
             participantId: string;
@@ -758,7 +691,6 @@ export interface components {
             nextCategoryChangeAt: string;
             canEdit: boolean;
             version: number;
-            firstEnrolledOn: string | null;
             guardianName?: string;
             guardianRelationship?: string;
             guardianPhone?: string;
@@ -833,11 +765,6 @@ export interface components {
             taskId?: string;
             participantId?: string;
         };
-        EligibilityDto: {
-            remaining: number;
-            available: number;
-            reason: string | null;
-        };
         NamedOptionDto: {
             id: string;
             name: string;
@@ -853,11 +780,6 @@ export interface components {
             teacherId: string;
             startsAt: string;
             endsAt: string;
-            /**
-             * @deprecated
-             * @description Legacy storage value, not a scheduling limit. Omission defaults to 1 on creation.
-             */
-            capacity?: number;
         };
         UpdateSessionDto: {
             classGroupId?: string;
@@ -865,11 +787,6 @@ export interface components {
             teacherId?: string;
             startsAt?: string;
             endsAt?: string;
-            /**
-             * @deprecated
-             * @description Legacy storage value, not a scheduling limit. Omission defaults to 1 on creation.
-             */
-            capacity?: number;
             expectedVersion: number;
             reason: string;
         };
@@ -923,6 +840,12 @@ export interface components {
              */
             kind: "TRIAL" | "REGULAR";
         };
+        ParticipantFeedbackDto: {
+            expectedVersion: number;
+            feedback: string;
+            abilityNote?: string;
+            preferenceNote?: string;
+        };
         CheckInDto: {
             expectedVersion: number;
         };
@@ -940,11 +863,6 @@ export interface components {
             expectedVersion: number;
             reason: string;
         };
-        MoveParticipantDto: {
-            expectedVersion: number;
-            reason: string;
-            targetSessionId: string;
-        };
         ChangeDto: {
             id: string;
             action: string;
@@ -960,23 +878,22 @@ export interface components {
             page: number;
             pageSize: number;
         };
-        FeedbackItemDto: {
-            participantId: string;
-            /** @enum {string} */
-            attendance: "ATTENDED" | "NO_SHOW";
-            feedback?: string;
-            abilityNote?: string;
-            preferenceNote?: string;
-        };
-        FeedbackDto: {
-            expectedVersion: number;
-            summary?: string;
-            students: components["schemas"]["FeedbackItemDto"][];
-        };
         TaskDto: {
+            completedAt: string | null;
+            resolvedByEntitlementEntryId: string | null;
+            taskVersion: number;
+            studentVersion: number | null;
+            /** @enum {string|null} */
+            membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER" | null;
+            checkedInAt: string | null;
+            feedbackSubmittedAt: string | null;
+            /** @description Whitelisted teaching snapshot; excludes guardian and financial data. */
+            sourceSnapshot: {
+                [key: string]: string;
+            };
             id: string;
             /** @enum {string} */
-            type: "LESSON_FEEDBACK" | "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+            type: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
             /** @enum {string} */
             status: "OPEN" | "DONE" | "CANCELLED";
             /** @enum {string|null} */
@@ -1002,9 +919,21 @@ export interface components {
             pageSize: number;
         };
         TaskDetailDto: {
+            completedAt: string | null;
+            resolvedByEntitlementEntryId: string | null;
+            taskVersion: number;
+            studentVersion: number | null;
+            /** @enum {string|null} */
+            membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER" | null;
+            checkedInAt: string | null;
+            feedbackSubmittedAt: string | null;
+            /** @description Whitelisted teaching snapshot; excludes guardian and financial data. */
+            sourceSnapshot: {
+                [key: string]: string;
+            };
             id: string;
             /** @enum {string} */
-            type: "LESSON_FEEDBACK" | "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+            type: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
             /** @enum {string} */
             status: "OPEN" | "DONE" | "CANCELLED";
             /** @enum {string|null} */
@@ -1022,6 +951,7 @@ export interface components {
             endsAt: string;
             studentId: string | null;
             studentName: string | null;
+            communications?: components["schemas"]["CommunicationViewDto"][];
             lesson: components["schemas"]["LessonDto"];
             student: components["schemas"]["StudentDetailDto"] | null;
             participant: components["schemas"]["ParticipantDto"] | null;
@@ -1030,15 +960,7 @@ export interface components {
             expectedVersion: number;
             communication: components["schemas"]["CommunicationDto"];
             /** @enum {string} */
-            outcome: "NO_ANSWER" | "CONSIDERING" | "INTERESTED" | "NOT_INTERESTED" | "ENROLLED";
-            nextDueAt?: string;
-            closeReason?: string;
-            firstEnrolledOn?: string;
-        };
-        ReopenDto: {
-            expectedVersion: number;
-            reason: string;
-            nextDueAt: string;
+            outcome: "INTERESTED" | "CONSIDERING" | "NOT_INTERESTED" | "UNREACHABLE";
         };
         SuggestionRequest: {
             /** @enum {string} */
@@ -1605,29 +1527,6 @@ export interface operations {
             };
         };
     };
-    WorkflowController_eligibility: {
-        parameters: {
-            query: {
-                courseId: string;
-            };
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EligibilityDto"];
-                };
-            };
-        };
-    };
     WorkflowController_sessions: {
         parameters: {
             query: {
@@ -1803,6 +1702,34 @@ export interface operations {
             };
         };
     };
+    WorkflowController_participantFeedback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description UUID retained when retrying identical input. */
+                "idempotency-key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ParticipantFeedbackDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionDto"];
+                };
+            };
+        };
+    };
     WorkflowController_checkIn: {
         parameters: {
             query?: never;
@@ -1859,62 +1786,6 @@ export interface operations {
             };
         };
     };
-    WorkflowController_restore: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description UUID retained when retrying identical input. */
-                "idempotency-key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["VersionDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActionDto"];
-                };
-            };
-        };
-    };
-    WorkflowController_move: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description UUID retained when retrying identical input. */
-                "idempotency-key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["MoveParticipantDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActionDto"];
-                };
-            };
-        };
-    };
     WorkflowController_changes: {
         parameters: {
             query?: {
@@ -1940,34 +1811,6 @@ export interface operations {
             };
         };
     };
-    WorkflowController_feedback: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description UUID retained when retrying identical input. */
-                "idempotency-key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["FeedbackDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActionDto"];
-                };
-            };
-        };
-    };
     WorkflowController_listTasks: {
         parameters: {
             query?: {
@@ -1975,7 +1818,7 @@ export interface operations {
                 pageSize?: number;
                 q?: string;
                 status?: "OPEN" | "DONE" | "CANCELLED";
-                type?: "LESSON_FEEDBACK" | "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+                type?: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
                 overdue?: string;
             };
             header?: never;
@@ -2030,34 +1873,6 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["FollowUpDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ActionDto"];
-                };
-            };
-        };
-    };
-    WorkflowController_reopen: {
-        parameters: {
-            query?: never;
-            header: {
-                /** @description UUID retained when retrying identical input. */
-                "idempotency-key": string;
-            };
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ReopenDto"];
             };
         };
         responses: {

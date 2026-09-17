@@ -1,0 +1,94 @@
+name: Deploy StudentSys
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never cancel a deployment while containers are being replaced.
+concurrency:
+  group: studentsys-server-deploy
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/check.yml
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+      DOCKER_DEFAULT_PLATFORM: linux/amd64
+      RELEASE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Build application images on the runner
+        env:
+          POSTGRES_PASSWORD: build-validation-only
+        run: |
+          docker compose --env-file .env.prod.example -f compose.prod.yaml build
+
+      - name: Verify deployment failure handling
+        run: |
+          DEPLOY_TEST_IMAGE="studentsys-db:$IMAGE_TAG" node scripts/test-database-image.mjs
+          DEPLOY_TEST_IMAGE="studentsys-db:$IMAGE_TAG" node scripts/test-deploy-server.mjs
+
+      - name: Package images and deployment files
+        run: |
+          mkdir -p release
+          cp compose.prod.yaml scripts/deploy-server.sh release/
+          docker save "studentsys-api:$IMAGE_TAG" "studentsys-web:$IMAGE_TAG" \
+            "studentsys-db:$IMAGE_TAG" | gzip -1 > release/images.tar.gz
+          (cd release && sha256sum images.tar.gz > images.sha256)
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY" || { echo 'Missing DEPLOY_SSH_KEY secret'; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/studentsys_deploy
+          chmod 600 ~/.ssh/studentsys_deploy
+          ssh-keygen -y -P '' -f ~/.ssh/studentsys_deploy > /dev/null
+          cp scripts/deploy/known_hosts ~/.ssh/studentsys_known_hosts
+          cat > ~/.ssh/config <<'SSH_CONFIG'
+          Host studentsys-deploy
+            HostName 47.79.232.38
+            User admin
+            Port 22
+            IdentityFile ~/.ssh/studentsys_deploy
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/studentsys_known_hosts
+            HostKeyAlgorithms ssh-ed25519
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Upload release
+        run: |
+          ssh studentsys-deploy "sudo -n install -d -m 755 /opt/studentsys && sudo -n install -d -o admin -g admin -m 700 /opt/studentsys/releases/$RELEASE_ID"
+          scp release/* "studentsys-deploy:/opt/studentsys/releases/$RELEASE_ID/"
+
+      - name: Start services
+        run: |
+          ssh studentsys-deploy "sudo -n bash /opt/studentsys/releases/$RELEASE_ID/deploy-server.sh '$IMAGE_TAG' '/opt/studentsys/releases/$RELEASE_ID'"
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-connrefused \
+            http://47.79.232.38/api/health
+          echo 'Deployed to http://47.79.232.38' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove temporary private key
+        if: always()
+        run: rm -f ~/.ssh/studentsys_deploy

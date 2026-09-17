@@ -286,7 +286,7 @@ try {
       classGroupId: group.id,
       courseId: course.id,
       teacherId: teacher.id,
-      capacity: 1,
+
       startsAt: new Date(+now + 3600000),
       endsAt: new Date(+now + 7200000),
     },

@@ -64,7 +64,7 @@ export function MyTasks() {
           ))}
         </TextField>
         <TextField
-          label={admin ? 'Student or class' : 'Class'}
+          label="Student or class"
           value={q}
           onChange={(e) => {
             setQ(e.target.value);
@@ -91,13 +91,7 @@ export function MyTasks() {
             <Table aria-label="My tasks">
               <TableHead>
                 <TableRow>
-                  {[
-                    admin ? 'Student' : 'Class',
-                    'Subject / lesson',
-                    'Task',
-                    'Due · Melbourne',
-                    '',
-                  ].map((x) => (
+                  {['Student', 'Subject / lesson', 'Task', 'Due · Melbourne', ''].map((x) => (
                     <TableCell key={x}>{x}</TableCell>
                   ))}
                 </TableRow>
@@ -106,14 +100,12 @@ export function MyTasks() {
                 {query.data.items.map((t) => (
                   <TableRow key={t.id}>
                     <TableCell>
-                      <Typography fontWeight={600}>
-                        {admin ? t.studentName : t.className}
-                      </Typography>
-                      {admin && (
+                      <Typography fontWeight={600}>{t.studentName}</Typography>
+                      {
                         <Typography variant="body2" color="text.secondary">
                           {t.className}
                         </Typography>
-                      )}
+                      }
                     </TableCell>
                     <TableCell>
                       {t.courseName}
@@ -122,7 +114,15 @@ export function MyTasks() {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      {admin ? label(t.reason ?? 'Follow up') : 'Lesson feedback'}
+                      {admin ? 'Follow-up' : 'Student evaluation'}
+                      {t.followupOutcome && (
+                        <Typography variant="body2">{label(t.followupOutcome)}</Typography>
+                      )}
+                      {!admin && t.checkedInAt && (
+                        <Typography variant="body2" color="text.secondary">
+                          Checked in
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell>
                       {local(t.dueAt).toFormat('d LLL, HH:mm')}

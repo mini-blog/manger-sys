@@ -15,7 +15,6 @@ export function useLessonEditable(lesson?: Lesson) {
   return (
     !lesson ||
     (lesson.status === 'SCHEDULED' &&
-      !lesson.feedbackSubmittedAt &&
       new Date(lesson.startsAt).getTime() > Math.max(now, Date.now()))
   );
 }

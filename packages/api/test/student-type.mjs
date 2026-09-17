@@ -49,7 +49,7 @@ export async function verifyStudentType({
       classGroupId: groupId,
       courseId,
       teacherId: t.user.id,
-      capacity: 10,
+
       startsAt: new Date(now.getTime() + 3600000),
       endsAt: new Date(now.getTime() + 7200000),
     },
@@ -75,18 +75,6 @@ export async function verifyStudentType({
       sessionId: lesson.id,
       kind: 'TRIAL',
       bookingStatus: 'CANCELLED',
-    },
-  });
-  const rebooking = await db.task.create({
-    data: {
-      type: 'TRIAL_FOLLOWUP',
-      purpose: 'REBOOKING',
-      assigneeId: a.user.id,
-      sessionId: lesson.id,
-      participantId: original.id,
-      reason: 'CANCELLED',
-      availableAt: now,
-      dueAt: now,
     },
   });
   const r = await roster();
@@ -134,7 +122,7 @@ export async function verifyStudentType({
       classGroupId: groupId,
       courseId,
       teacherId: t.user.id,
-      capacity: 10,
+
       startsAt: new Date(now.getTime() + 10800000),
       endsAt: new Date(now.getTime() + 14400000),
     },
@@ -145,17 +133,13 @@ export async function verifyStudentType({
       kind: 'REGULAR',
     }),
   );
-  assert.equal(
-    (await db.task.findUniqueOrThrow({ where: { id: rebooking.id } })).rebookedToParticipantId,
-    null,
-  );
   // Member attending with trial credits is never treated as a trial student by feedback.
   const past = await db.classSession.create({
     data: {
       classGroupId: groupId,
       courseId,
       teacherId: t.user.id,
-      capacity: 10,
+
       startsAt: new Date(now.getTime() - 7200000),
       endsAt: new Date(now.getTime() - 3600000),
     },
@@ -163,13 +147,7 @@ export async function verifyStudentType({
   const p = await db.sessionParticipant.create({
     data: { sessionId: past.id, studentId: gift.id, kind: 'TRIAL' },
   });
-  ok(
-    await req(t, `/sessions/${past.id}/feedback`, {
-      expectedVersion: 1,
-      summary: '',
-      students: [{ participantId: p.id, attendance: 'ATTENDED', feedback: '' }],
-    }),
-  );
+  ok(await req(t, `/participants/${p.id}/check-in`, { expectedVersion: p.version }));
   assert.equal(await db.task.count({ where: { participantId: p.id, type: 'TRIAL_FOLLOWUP' } }), 0);
   assert.equal((await read(gift)).type, 'MEMBER');
   await assert.rejects(() =>

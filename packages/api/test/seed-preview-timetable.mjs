@@ -144,7 +144,6 @@ try {
               teacherId,
               startsAt,
               endsAt,
-              capacity: 10,
             },
           });
           for (let n = 0; n < 4; n++)
@@ -161,7 +160,6 @@ try {
                 sessionId: id,
                 studentId: `${prefix}-student-${trialIndex}`,
                 kind: 'TRIAL',
-                isNewToClass: true,
               },
             });
             await tx.task.create({

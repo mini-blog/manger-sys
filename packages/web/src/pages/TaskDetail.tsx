@@ -1,22 +1,10 @@
-import type { SupportedLanguage } from '@student/common';
-import { FOLLOW_UP_OUTCOMES } from '@student/common';
-import { useRef, useState } from 'react';
+import { MANUAL_FOLLOWUP_OUTCOMES, type ManualFollowupOutcome } from '@student/common';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Alert,
-  Button,
-  Chip,
-  Divider,
-  MenuItem,
-  Paper,
-  Stack,
-  TextField,
-  Typography,
-} from '@mui/material';
+import { Alert, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material';
 import { api, apiError } from '../api/client';
 import type { components } from '@student/common/api';
-import { useAuth } from '../auth';
 import { useWrite } from '../hooks/useWrite';
 import {
   channels,
@@ -28,13 +16,12 @@ import {
   type CommunicationFields,
 } from '../components/FormParts';
 import { local } from '../lib/time';
-import { Communications } from './StudentDetail';
 type Task = components['schemas']['TaskDetailDto'];
-type Roster = components['schemas']['RosterDto'];
 export function TaskDetail() {
   const { id = '' } = useParams();
   const query = useQuery({
     queryKey: ['task', id],
+    refetchInterval: 30000,
     queryFn: async () => {
       const { data, error } = await api.GET('/api/tasks/{id}', { params: { path: { id } } });
       if (!data) throw apiError(error);
@@ -43,197 +30,169 @@ export function TaskDetail() {
   });
   const t = query.data;
   return (
-    <Stack spacing={3} sx={{ maxWidth: 1050 }}>
+    <Stack spacing={2} sx={{ maxWidth: 920 }}>
       <Button component={Link} to="/" sx={{ alignSelf: 'flex-start' }}>
         ← My tasks
       </Button>
       <Status query={query} />
       {t && (
         <>
-          <Stack direction="row" gap={2} alignItems="center">
+          <Stack direction="row" gap={1} alignItems="center">
             <Typography variant="h4" component="h1">
-              {t.type === 'LESSON_FEEDBACK' ? 'Lesson feedback' : t.studentName}
+              {t.studentName}
             </Typography>
             <Chip label={label(t.status)} size="small" />
+            <Chip
+              label={label(t.membershipCategory ?? 'TRIAL_STUDENT')}
+              size="small"
+              variant="outlined"
+            />
           </Stack>
           <Typography color="text.secondary">
             {t.className} · {t.courseName} · {local(t.startsAt).toFormat('ccc d LLL yyyy, HH:mm')} ·{' '}
             {t.teacherName}
           </Typography>
-          {t.type === 'LESSON_FEEDBACK' ? (
-            <TeacherTask task={t} />
+          {t.checkedInAt && (
+            <Typography variant="body2">
+              Checked in {local(t.checkedInAt).toFormat('d LLL, HH:mm')}
+            </Typography>
+          )}
+          {t.type === 'TRIAL_FEEDBACK' ? (
+            <Evaluation key={t.id} task={t} reload={async () => (await query.refetch()).data} />
           ) : (
-            <FollowUp key={`${id}:${t.version}`} task={t} />
+            <FollowUp key={t.id} task={t} reload={async () => (await query.refetch()).data} />
           )}
         </>
       )}
     </Stack>
   );
 }
-function TeacherTask({ task: t }: { task: Task }) {
-  const query = useQuery({
-    queryKey: ['roster', t.sessionId],
-    queryFn: async () => {
-      const { data, error } = await api.GET('/api/sessions/{id}/participants', {
-        params: { path: { id: t.sessionId } },
-      });
-      if (!data) throw apiError(error);
-      return data;
-    },
-  });
+function Evaluation({ task: t, reload }: { task: Task; reload: () => Promise<Task | undefined> }) {
+  const p = t.participant!;
+  const [feedback, setFeedback] = useState(p.feedback ?? '');
+  const [abilityNote, setAbility] = useState(p.abilityNote ?? '');
+  const [preferenceNote, setPreference] = useState(p.preferenceNote ?? '');
+  // Preserve the version belonging to this draft; a background refresh must not silently overwrite it.
+  const [expectedVersion, setExpectedVersion] = useState(p.version);
+  const [startedOpen] = useState(t.status === 'OPEN');
+  const save = useWrite('post', '/api/participants/{id}/feedback', { id: p.participantId });
+  if (t.status !== 'OPEN' || save.isSuccess)
+    return (
+      <Paper sx={{ p: 2 }}>
+        <Stack spacing={1}>
+          <Typography variant="h6">
+            {t.status === 'CANCELLED' ? 'Evaluation cancelled' : 'Evaluation submitted'}
+          </Typography>
+          {startedOpen && !save.isSuccess && !!feedback && (
+            <Alert severity="warning">
+              This task changed. Your unsaved draft: {feedback} · {abilityNote} · {preferenceNote}
+            </Alert>
+          )}
+          <Typography sx={{ whiteSpace: 'pre-wrap' }}>{p.feedback ?? feedback}</Typography>
+          {(p.abilityNote || abilityNote) && (
+            <Typography>Ability: {p.abilityNote || abilityNote}</Typography>
+          )}
+          {(p.preferenceNote || preferenceNote) && (
+            <Typography>Preferences: {p.preferenceNote || preferenceNote}</Typography>
+          )}
+          {t.completedAt && (
+            <Typography variant="body2">
+              {local(t.completedAt).toFormat('d LLL yyyy, HH:mm')}
+            </Typography>
+          )}
+        </Stack>
+      </Paper>
+    );
   return (
-    <>
-      <Status query={query} />
-      {query.data && (
-        <FeedbackForm key={`${t.sessionId}:${query.data.lesson.version}`} roster={query.data} />
-      )}
-    </>
-  );
-}
-export function FeedbackForm({ roster: r }: { roster: Roster }) {
-  const [summary, setSummary] = useState(r.lesson.summary ?? '');
-  const [rows, setRows] = useState(
-    r.participants.map((p) => ({
-      participantId: p.participantId,
-      attendance: p.attendance === 'PENDING' ? '' : p.attendance,
-      feedback: p.feedback ?? '',
-      abilityNote: p.abilityNote ?? '',
-      preferenceNote: p.preferenceNote ?? '',
-    })),
-  );
-  const save = useWrite('post', '/api/sessions/{id}/feedback', { id: r.lesson.id });
-  const done = Boolean(r.lesson.feedbackSubmittedAt);
-  return (
-    <Stack
+    <Paper
       component="form"
-      spacing={2}
+      sx={{ p: 2 }}
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate({
-          expectedVersion: r.lesson.version,
-          summary,
-          students: rows.map((p) => ({ ...p, attendance: p.attendance as 'ATTENDED' | 'NO_SHOW' })),
-        });
+        save.mutate({ expectedVersion, feedback, abilityNote, preferenceNote });
       }}
     >
-      {save.isError && <Alert severity="error">{save.error.message}</Alert>}
-      {r.participants.map((p, i) => (
-        <Paper
-          key={p.participantId}
-          sx={{ p: 3, borderColor: p.type === 'TRIAL' ? '#dfbd76' : undefined }}
-        >
-          <Stack spacing={2}>
-            <Stack direction="row" gap={2} alignItems="center">
-              <Typography fontWeight={600}>{p.name}</Typography>
-              <Chip
-                size="small"
-                label={label(p.category)}
-                color={p.type === 'TRIAL' ? 'warning' : 'default'}
-              />
-              <Typography variant="body2" color="text.secondary">
-                {p.yearLevel}
-              </Typography>
-            </Stack>
-            <TextField
-              select
-              label="Attendance"
-              required
-              disabled={done}
-              value={rows[i].attendance}
-              onChange={(e) =>
-                setRows(
-                  rows.map((row, n) => (n === i ? { ...row, attendance: e.target.value } : row)),
-                )
-              }
-              sx={{ maxWidth: 230 }}
-            >
-              <MenuItem value="ATTENDED">Attended</MenuItem>
-              <MenuItem value="NO_SHOW">Did not attend</MenuItem>
-            </TextField>
-            {(['feedback', 'abilityNote', 'preferenceNote'] as const).map((key) => (
-              <TextField
-                key={key}
-                label={
-                  {
-                    feedback: 'Individual feedback',
-                    abilityNote: 'Ability & learning level',
-                    preferenceNote: 'Learning preferences',
-                  }[key]
-                }
-                multiline
-                minRows={key === 'feedback' ? 2 : 1}
-                disabled={done}
-                required={
-                  key === 'feedback' && p.type === 'TRIAL' && rows[i].attendance === 'ATTENDED'
-                }
-                value={rows[i][key]}
-                onChange={(e) =>
-                  setRows(rows.map((row, n) => (n === i ? { ...row, [key]: e.target.value } : row)))
-                }
-                slotProps={{ htmlInput: { maxLength: 1000 } }}
-              />
-            ))}
-          </Stack>
-        </Paper>
-      ))}
-      <TextField
-        label="Class summary (optional)"
-        multiline
-        minRows={2}
-        disabled={done}
-        value={summary}
-        onChange={(e) => setSummary(e.target.value)}
-        slotProps={{ htmlInput: { maxLength: 2000 } }}
-      />
-      {done ? (
-        <Typography color="text.secondary">
-          Submitted {local(r.lesson.feedbackSubmittedAt!).toFormat('d LLL yyyy, HH:mm')}
-        </Typography>
-      ) : (
+      <Stack spacing={2}>
+        <Typography variant="h6">Student evaluation</Typography>
+        {save.isError && (
+          <Alert
+            severity="error"
+            action={
+              <Button
+                onClick={async () => {
+                  const latest = await reload();
+                  if (latest?.status === 'OPEN' && latest.participant) {
+                    setExpectedVersion(latest.participant.version);
+                    save.reset();
+                  }
+                }}
+              >
+                Refresh task
+              </Button>
+            }
+          >
+            {save.error.message}
+          </Alert>
+        )}
+        <TextField
+          label="Evaluation"
+          required
+          multiline
+          minRows={4}
+          value={feedback}
+          onChange={(e) => setFeedback(e.target.value)}
+          slotProps={{ htmlInput: { maxLength: 2000 } }}
+        />
+        <TextField
+          label="Ability (optional)"
+          multiline
+          value={abilityNote}
+          onChange={(e) => setAbility(e.target.value)}
+          slotProps={{ htmlInput: { maxLength: 2000 } }}
+        />
+        <TextField
+          label="Preferences (optional)"
+          multiline
+          value={preferenceNote}
+          onChange={(e) => setPreference(e.target.value)}
+          slotProps={{ htmlInput: { maxLength: 2000 } }}
+        />
         <Button
           type="submit"
           variant="contained"
-          disabled={save.isPending || rows.some((p) => !p.attendance)}
+          disabled={save.isPending || !feedback.trim()}
           sx={{ alignSelf: 'flex-start' }}
         >
-          Submit feedback · {rows.length} students
+          Submit evaluation
         </Button>
-      )}
-    </Stack>
+      </Stack>
+    </Paper>
   );
 }
-function FollowUp({ task: t }: { task: Task }) {
+function FollowUp({ task: t, reload }: { task: Task; reload: () => Promise<Task | undefined> }) {
   const s = t.student!;
   const [form, setForm] = useState<CommunicationFields>({
     guardianNameSnapshot: s.guardianName ?? '',
     channel:
-      s.preferredChannel ||
-      (s.guardianEmail
-        ? 'EMAIL'
-        : s.guardianPhone
-          ? 'PHONE'
-          : s.guardianWechat
-            ? 'WECHAT'
-            : 'IN_PERSON'),
+      s.preferredChannel || (s.guardianEmail ? 'EMAIL' : s.guardianPhone ? 'PHONE' : 'IN_PERSON'),
     content: '',
     occurredAt: wall(new Date().toISOString()),
   });
-  const [outcome, setOutcome] = useState(''),
-    [next, setNext] = useState(''),
-    [reason, setReason] = useState(''),
-    [enrolled, setEnrolled] = useState(s.firstEnrolledOn ?? ''),
-    [error, setError] = useState('');
+  const [outcome, setOutcome] = useState<ManualFollowupOutcome | ''>('');
+  const [expectedVersion, setExpectedVersion] = useState(t.version);
+  const [startedOpen] = useState(t.status === 'OPEN');
+  const [error, setError] = useState('');
   const save = useWrite('post', '/api/tasks/{id}/follow-up', { id: t.id });
-  const reopen = useWrite('post', '/api/tasks/{id}/reopen', { id: t.id });
-  const done = ['NOT_INTERESTED', 'ENROLLED'].includes(outcome);
   return (
     <>
-      <Paper sx={{ p: 3 }}>
+      <Paper sx={{ p: 2 }}>
         <Stack spacing={1}>
-          <Stack direction="row" gap={2}>
-            <Typography variant="h6">{label(t.reason ?? 'Follow up')}</Typography>
+          <Stack direction="row" gap={1}>
             <Button component={Link} to={`/students/${s.id}`}>
-              Student profile
+              Student profile / communication history
+            </Button>
+            <Button component={Link} to={`/entitlements?studentId=${s.id}`}>
+              Lesson credits
             </Button>
           </Stack>
           <Typography>
@@ -242,10 +201,9 @@ function FollowUp({ task: t }: { task: Task }) {
           <Typography color="text.secondary">
             {[s.guardianPhone, s.guardianEmail, s.guardianWechat].filter(Boolean).join(' · ')}
           </Typography>
-          <Divider sx={{ my: 1 }} />
           <Typography fontWeight={600}>Teacher feedback</Typography>
           <Typography sx={{ whiteSpace: 'pre-wrap' }}>
-            {t.participant?.feedback || 'No individual feedback recorded.'}
+            {t.sourceSnapshot.feedback || t.participant?.feedback || 'No evaluation recorded.'}
           </Typography>
           {t.participant?.abilityNote && (
             <Typography>Ability: {t.participant.abilityNote}</Typography>
@@ -253,31 +211,24 @@ function FollowUp({ task: t }: { task: Task }) {
           {t.participant?.preferenceNote && (
             <Typography>Preferences: {t.participant.preferenceNote}</Typography>
           )}
-          <Typography variant="body2" color="text.secondary">
-            Due {local(t.dueAt).toFormat('d LLL yyyy, HH:mm')} · Melbourne
-          </Typography>
         </Stack>
       </Paper>
-      <AiSuggestions key={t.id} task={t} />
-      {t.status === 'OPEN' ? (
+      {t.status === 'OPEN' && !save.isSuccess ? (
         <Paper
           component="form"
-          sx={{ p: 3 }}
+          sx={{ p: 2 }}
           onSubmit={(e) => {
             e.preventDefault();
+            setError('');
             try {
-              setError('');
               save.mutate({
-                expectedVersion: t.version,
+                expectedVersion,
                 communication: {
                   ...form,
                   channel: form.channel as (typeof channels)[number],
                   occurredAt: toInstant(form.occurredAt),
                 },
-                outcome: outcome as components['schemas']['FollowUpDto']['outcome'],
-                nextDueAt: !done ? toInstant(next) : undefined,
-                closeReason: done ? reason : undefined,
-                firstEnrolledOn: outcome === 'ENROLLED' ? enrolled : undefined,
+                outcome: outcome as ManualFollowupOutcome,
               });
             } catch (e) {
               setError((e as Error).message);
@@ -287,247 +238,105 @@ function FollowUp({ task: t }: { task: Task }) {
           <Stack spacing={2}>
             <Typography variant="h6">Record follow-up</Typography>
             {(error || save.isError) && (
-              <Alert severity="error">{error || save.error?.message}</Alert>
+              <Alert
+                severity="error"
+                action={
+                  <Button
+                    onClick={async () => {
+                      const latest = await reload();
+                      if (latest?.status === 'OPEN') {
+                        setExpectedVersion(latest.version);
+                        save.reset();
+                        setError('');
+                      }
+                    }}
+                  >
+                    Refresh task
+                  </Button>
+                }
+              >
+                {error || save.error?.message}
+              </Alert>
             )}
-            <CommunicationFieldsForm value={form} set={setForm} />
             <TextField
               select
               required
               label="Outcome"
               value={outcome}
-              onChange={(e) => setOutcome(e.target.value)}
+              onChange={(e) => setOutcome(e.target.value as ManualFollowupOutcome)}
             >
-              {FOLLOW_UP_OUTCOMES.map((o) => (
+              {MANUAL_FOLLOWUP_OUTCOMES.map((o) => (
                 <MenuItem key={o} value={o}>
-                  {o === 'ENROLLED' ? 'Enrolled (manually confirmed)' : label(o)}
+                  {label(o)}
                 </MenuItem>
               ))}
             </TextField>
-            {done ? (
-              <TextField
-                label="Reason for closing"
-                required
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                slotProps={{ htmlInput: { maxLength: 500 } }}
-              />
-            ) : (
-              <TextField
-                label="Next follow-up · Melbourne"
-                type="datetime-local"
-                required
-                value={next}
-                onChange={(e) => setNext(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
+            {outcome === 'UNREACHABLE' && (
+              <Typography variant="body2">
+                Record when and how you tried to contact the family.
+              </Typography>
             )}
-            {outcome === 'ENROLLED' && (
-              <TextField
-                label="First enrolment date"
-                type="date"
-                required
-                disabled={Boolean(s.firstEnrolledOn)}
-                value={enrolled}
-                onChange={(e) => setEnrolled(e.target.value)}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
+            {outcome === 'NOT_INTERESTED' && (
+              <Typography variant="body2">
+                Include the reason in the communication or concerns.
+              </Typography>
             )}
+            <CommunicationFieldsForm value={form} set={setForm} />
             <Button
               type="submit"
               variant="contained"
-              disabled={save.isPending || !outcome}
+              disabled={save.isPending || !outcome || !form.content.trim()}
               sx={{ alignSelf: 'flex-start' }}
             >
-              Save communication
+              Complete follow-up
             </Button>
           </Stack>
         </Paper>
       ) : (
-        <Paper
-          component="form"
-          sx={{ p: 3 }}
-          onSubmit={(e) => {
-            e.preventDefault();
-            try {
-              setError('');
-              reopen.mutate({ expectedVersion: t.version, reason, nextDueAt: toInstant(next) });
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }}
-        >
-          <Stack spacing={2}>
-            <Typography variant="h6">Reopen follow-up</Typography>
-            {(error || reopen.isError) && (
-              <Alert severity="error">{error || reopen.error?.message}</Alert>
+        <Paper sx={{ p: 2 }}>
+          <Stack spacing={1}>
+            <Typography variant="h6">
+              {t.status === 'CANCELLED' ? 'Follow-up cancelled' : 'Follow-up completed'}
+            </Typography>
+            {startedOpen && !save.isSuccess && !!form.content && (
+              <Alert severity="warning">
+                This task changed. Your unsaved draft: {form.content} · {form.concerns} ·{' '}
+                {form.coreQuestion} · {label(outcome)}
+              </Alert>
             )}
-            <TextField
-              label="Reason"
-              required
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              slotProps={{ htmlInput: { maxLength: 500 } }}
-            />
-            <TextField
-              label="Next follow-up · Melbourne"
-              type="datetime-local"
-              required
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
-            <Button type="submit" disabled={reopen.isPending} sx={{ alignSelf: 'flex-start' }}>
-              Reopen task
-            </Button>
+            <Typography>{label(t.followupOutcome ?? outcome)}</Typography>
+            {t.completedAt && (
+              <Typography>{local(t.completedAt).toFormat('d LLL yyyy, HH:mm')}</Typography>
+            )}
+            {t.resolvedByEntitlementEntryId && (
+              <Typography variant="body2">
+                Purchase record: {t.resolvedByEntitlementEntryId}
+              </Typography>
+            )}
           </Stack>
         </Paper>
       )}
-      <Communications student={s} />
+      {!!t.communications?.length && (
+        <Paper sx={{ p: 2 }}>
+          <Stack spacing={2}>
+            <Typography variant="h6">This follow-up</Typography>
+            {t.communications.map((c) => (
+              <Stack key={c.id} spacing={0.5}>
+                <Typography variant="body2">
+                  {local(c.occurredAt).toFormat('d LLL yyyy, HH:mm')} · {label(c.channel)} ·{' '}
+                  {c.authorName}
+                </Typography>
+                <Typography sx={{ whiteSpace: 'pre-wrap' }}>{c.content}</Typography>
+                {c.concerns && <Typography>Concerns: {c.concerns}</Typography>}
+                {c.coreQuestion && <Typography>Core question: {c.coreQuestion}</Typography>}
+                {!!c.reasonTags.length && (
+                  <Typography variant="body2">{c.reasonTags.map(label).join(' · ')}</Typography>
+                )}
+              </Stack>
+            ))}
+          </Stack>
+        </Paper>
+      )}
     </>
-  );
-}
-function AiSuggestions({ task: t }: { task: Task }) {
-  const { auth } = useAuth();
-  const [channel, setChannel] = useState(
-      t.student?.preferredChannel ||
-        (t.student?.guardianEmail ? 'EMAIL' : t.student?.guardianPhone ? 'PHONE' : 'IN_PERSON'),
-    ),
-    [language, setLanguage] = useState(t.student?.preferredLanguage || 'en-AU');
-  const [result, setResult] = useState<components['schemas']['SuggestionDto'] | null>(null),
-    [pending, setPending] = useState(false),
-    [error, setError] = useState(''),
-    [copied, setCopied] = useState(false);
-  const generation = useRef(0);
-  const clear = () => {
-    generation.current++;
-    setResult(null);
-    setPending(false);
-    setError('');
-    setCopied(false);
-  };
-  async function generate() {
-    const current = ++generation.current;
-    setPending(true);
-    setError('');
-    try {
-      const { data, error } = await api.POST('/api/tasks/{id}/suggestions', {
-        params: { path: { id: t.id } },
-        headers: { 'x-csrf-token': auth?.csrfToken ?? '' },
-        body: {
-          channel: channel as (typeof channels)[number],
-          language: language as SupportedLanguage,
-        },
-      });
-      if (!data) throw apiError(error);
-      if (generation.current === current) setResult(data);
-    } catch (e) {
-      if (generation.current === current) setError((e as Error).message);
-    } finally {
-      if (generation.current === current) setPending(false);
-    }
-  }
-  return (
-    <Paper sx={{ p: 3 }}>
-      <Stack spacing={2}>
-        <Typography variant="h6">Follow-up assistance</Typography>
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
-          <TextField
-            select
-            label="Channel"
-            value={channel}
-            onChange={(e) => {
-              clear();
-              setChannel(e.target.value);
-            }}
-            sx={{ minWidth: 150 }}
-          >
-            {channels.map((c) => (
-              <MenuItem key={c} value={c}>
-                {label(c)}
-              </MenuItem>
-            ))}
-          </TextField>
-          <TextField
-            select
-            label="Language"
-            value={language}
-            onChange={(e) => {
-              clear();
-              setLanguage(e.target.value);
-            }}
-            sx={{ minWidth: 140 }}
-          >
-            <MenuItem value="en-AU">English</MenuItem>
-            <MenuItem value="zh-CN">中文</MenuItem>
-          </TextField>
-          <Button variant="outlined" onClick={() => void generate()} disabled={pending}>
-            {pending ? 'Generating…' : 'Generate suggestions'}
-          </Button>
-        </Stack>
-        {error && <Alert severity="error">{error}</Alert>}
-        {result && (
-          <>
-            <Typography variant="caption" color="text.secondary">
-              {result.source === 'llm'
-                ? 'Qwen suggestion · review before use'
-                : 'Template · Qwen unavailable'}{' '}
-              · {local(result.generatedAt).toFormat('HH:mm')}
-            </Typography>
-            <Typography>{result.summary}</Typography>
-            {result.observations.map((o, i) => (
-              <div key={i}>
-                <Typography>{o.text}</Typography>
-                {o.sourceIds.map((id) => (
-                  <Typography key={id} variant="caption" color="text.secondary" display="block">
-                    Source: {result.evidence.find((e) => e.id === id)?.text}
-                  </Typography>
-                ))}
-              </div>
-            ))}
-            <Typography fontWeight={600}>{result.suggestedNextStep}</Typography>
-            {result.questions.map((q) => (
-              <Typography key={q}>• {q}</Typography>
-            ))}
-            <TextField
-              label="Talking points"
-              multiline
-              value={result.talkingPoints.join('\n')}
-              onChange={(e) => setResult({ ...result, talkingPoints: e.target.value.split('\n') })}
-            />
-            {result.subject !== null && (
-              <TextField
-                label="Email subject"
-                value={result.subject}
-                onChange={(e) => setResult({ ...result, subject: e.target.value })}
-              />
-            )}
-            {result.messageDraft !== null && (
-              <TextField
-                label="Draft"
-                multiline
-                minRows={3}
-                value={result.messageDraft}
-                onChange={(e) => setResult({ ...result, messageDraft: e.target.value })}
-              />
-            )}
-            <Button
-              sx={{ alignSelf: 'flex-start' }}
-              onClick={() =>
-                void navigator.clipboard
-                  .writeText(
-                    [result.subject, result.messageDraft ?? result.talkingPoints.join('\n')]
-                      .filter(Boolean)
-                      .join('\n\n'),
-                  )
-                  .then(() => setCopied(true))
-                  .catch(() => setError('Copy failed. Select and copy the text manually.'))
-              }
-            >
-              {copied ? 'Copied' : 'Copy draft'}
-            </Button>
-          </>
-        )}
-      </Stack>
-    </Paper>
   );
 }

@@ -294,7 +294,7 @@ export function Communications({ student: s }: { student: Student }) {
   });
   const save = useWrite('post', '/api/students/{id}/communications', { id: s.id }, () => {
     setOpen(false);
-    setForm({ ...form, content: '' });
+    setForm({ ...form, content: '', concerns: '', coreQuestion: '', reasonTags: [] });
     setPage(1);
   });
   return (
@@ -357,6 +357,11 @@ export function Communications({ student: s }: { student: Student }) {
               {c.outcome ? ` · ${label(c.outcome)}` : ''}
             </Typography>
             <Typography sx={{ whiteSpace: 'pre-wrap' }}>{c.content}</Typography>
+            {c.concerns && <Typography>Concerns: {c.concerns}</Typography>}
+            {c.coreQuestion && <Typography>Core question: {c.coreQuestion}</Typography>}
+            {!!c.reasonTags.length && (
+              <Typography variant="body2">{c.reasonTags.map(label).join(' · ')}</Typography>
+            )}
           </div>
         ))}
       </Stack>

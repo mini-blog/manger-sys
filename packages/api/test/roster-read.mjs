@@ -44,7 +44,7 @@ export async function verifyRosterRead({
         classGroupId: groupId,
         courseId,
         teacherId: t.user.id,
-        capacity: 20,
+
         startsAt,
         endsAt: new Date(startsAt.getTime() + 3600000),
         ...extra,

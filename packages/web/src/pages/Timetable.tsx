@@ -33,7 +33,6 @@ export function Timetable() {
   const { auth } = useAuth();
   const admin = auth?.user.role === 'ADMIN';
   const [params, setParams] = useSearchParams();
-  const hasLegacySource = params.has('sourceRebookingTaskId');
   const initialWeek = DateTime.fromISO(params.get('week') ?? '', { zone: ZONE });
   const [week, setWeek] = useState<DateTime>(
     initialWeek.isValid ? initialWeek.startOf('week') : currentWeek(),
@@ -67,7 +66,6 @@ export function Timetable() {
     setParams(
       (previous) => {
         const p = new URLSearchParams(previous);
-        p.delete('sourceRebookingTaskId');
         for (const [k, v] of Object.entries({
           week: week.toISODate()!,
           q: search,
@@ -83,7 +81,7 @@ export function Timetable() {
       },
       { replace: true },
     );
-  }, [week, search, course, group, teacher, view, hasLegacySource, setParams]);
+  }, [week, search, course, group, teacher, view, setParams]);
   const query = useLessons(week.toISODate()!, search);
   const lessons = query.data ?? [];
   const selected = lessons.find((lesson) => lesson.id === params.get('lesson')) ?? null;

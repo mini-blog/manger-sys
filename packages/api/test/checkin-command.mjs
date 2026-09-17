@@ -40,7 +40,6 @@ export async function verifyCheckinCommand({
         teacherId: t.user.id,
         startsAt: new Date(base.getTime() + offset * 3600000),
         endsAt: new Date(base.getTime() + (offset + 1) * 3600000),
-        capacity: 1,
       },
     });
   }
@@ -143,13 +142,7 @@ export async function verifyCheckinCommand({
     ok(await req(t, `/tasks/${task.id}`), 200);
     ok(await check(p)); // Fresh key plus old version is a harmless acknowledgment.
     code(await check(p, t, key, 2), 'IDEMPOTENCY_CONFLICT');
-    code(
-      await req(t, `/sessions/${l.id}/feedback`, {
-        expectedVersion: before.version + 1,
-        students: [{ participantId: p.id, attendance: 'NO_SHOW', feedback: '' }],
-      }),
-      'INDIVIDUAL_FEEDBACK_REQUIRED',
-    );
+    assert.equal((await req(t, `/sessions/${l.id}/feedback`, {})).status, 404);
     assert.equal((await get(p.id)).attendance, 'ATTENDED');
     passed(
       'check-in: concurrent and replayed requests consume once, update versions/audit once, preserve teaching obligation',

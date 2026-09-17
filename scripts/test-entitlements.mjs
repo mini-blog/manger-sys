@@ -67,8 +67,9 @@ try {
   run('pnpm', ['db:migrate'], env);
   run(process.execPath, ['packages/api/test/entitlements.mjs'], env);
   run(process.execPath, ['packages/api/test/accounts.mjs'], env);
-  // Regression covers new booking rules and the remaining legacy lifecycle until cutover.
+  // Final seed and current HTTP lifecycle only; retired move/restore/reopen matrices are excluded.
   run('pnpm', ['db:seed'], env);
+  run(process.execPath, ['packages/api/test/seed-repeat.mjs'], env);
   run(process.execPath, ['packages/api/test/integration.mjs'], env);
   run(process.execPath, ['packages/api/test/workflow.mjs'], env);
 } finally {

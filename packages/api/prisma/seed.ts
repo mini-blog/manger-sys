@@ -2,7 +2,8 @@ import { config } from 'dotenv';
 import { DateTime } from 'luxon';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
-import { nextDay17, digest, json } from '../src/common/domain';
+import { nextDay17, json } from '../src/common/domain';
+import { ensureFirstPurchaseFollowup } from '../src/workflow/followup-policy';
 import { hashPassword } from '../src/auth/password';
 
 config({ path: '../../.env', quiet: true });
@@ -76,6 +77,10 @@ async function main() {
           ownerAdminId: staff[i % 3][0],
           type: purchasedAt ? 'MEMBER' : 'TRIAL',
           firstPurchasedAt: purchasedAt,
+          guardianName: `Demo guardian ${i + 1}`,
+          guardianEmail: `guardian-${i + 1}@example.com`,
+          guardianRelationship: 'Parent',
+          preferredChannel: 'EMAIL',
         },
       });
       await tx.entitlementEntry.create({
@@ -111,21 +116,14 @@ async function main() {
           teacherId: staff[3 + (((slot % 3) + day) % 4)][0],
           startsAt: starts.toJSDate(),
           endsAt: starts.plus({ hours: 1 }).toJSDate(),
-          capacity: slot === 8 ? 4 : 8,
         },
       });
       for (let n = 0; n < 4; n++) {
         const studentId = `student-${groupIndex * 4 + n}`;
-        const earlier = await prisma.sessionParticipant.count({
-          where: {
-            studentId,
-            session: { classGroupId: `group-${groupIndex}`, startsAt: { lt: starts.toJSDate() } },
-          },
-        });
         await prisma.sessionParticipant.upsert({
           where: { sessionId_studentId: { sessionId, studentId } },
           update: {},
-          create: { sessionId, studentId, isNewToClass: earlier === 0 },
+          create: { sessionId, studentId },
         });
       }
       if (
@@ -144,85 +142,43 @@ async function main() {
         await prisma.sessionParticipant.upsert({
           where: { sessionId_studentId: { sessionId, studentId } },
           update: {},
-          create: { sessionId, studentId, kind: 'TRIAL', isNewToClass: true },
+          create: { sessionId, studentId, kind: 'TRIAL' },
         });
       }
       count++;
     }
   }
-  // Upgrade only missing fields on the known fictional seed records.
-  for (let i = 0; i < 60; i++) {
-    const id = `student-${i}`;
-    await prisma.student.updateMany({
-      where: { id, guardianName: null },
+
+  // Seed-owned evaluation rows only; repeat runs never refill credits or reopen work.
+  const trialBookings = await prisma.sessionParticipant.findMany({
+    where: {
+      sessionId: { startsWith: 'demo-' },
+      student: { type: 'TRIAL' },
+      bookingStatus: 'BOOKED',
+    },
+    include: { session: true },
+  });
+  for (const p of trialBookings) {
+    if (await prisma.task.findFirst({ where: { participantId: p.id, type: 'TRIAL_FEEDBACK' } }))
+      continue;
+    await prisma.task.create({
       data: {
-        guardianName: `Demo guardian ${i + 1}`,
-        guardianEmail: `guardian-${i + 1}@example.com`,
-        guardianRelationship: 'Parent',
-        preferredChannel: 'EMAIL',
+        type: 'TRIAL_FEEDBACK',
+        participantId: p.id,
+        sessionId: p.sessionId,
+        assigneeId: p.session.teacherId,
+        availableAt: p.session.endsAt,
+        dueAt: nextDay17(p.session.endsAt),
       },
     });
-    if (i < 48) {
-      const earliest = await prisma.sessionParticipant.findFirst({
-        where: { studentId: id, kind: 'REGULAR' },
-        include: { session: true },
-        orderBy: { session: { startsAt: 'asc' } },
-      });
-      if (earliest)
-        await prisma.student.updateMany({
-          where: { id, firstEnrolledOn: null },
-          data: {
-            firstEnrolledOn:
-              DateTime.fromJSDate(earliest.session.startsAt, { zone: 'Australia/Melbourne' })
-                .minus({ days: i % 3 === 0 ? 0 : 30 })
-                .startOf('day')
-                .toISODate() + 'T00:00:00.000Z',
-          },
-        });
-    }
   }
-  const lessons = await prisma.classSession.findMany({ where: { id: { startsWith: 'demo-' } } });
-  for (const l of lessons)
-    if (!(await prisma.task.findFirst({ where: { type: 'LESSON_FEEDBACK', sessionId: l.id } })))
-      await prisma.task.create({
-        data: {
-          type: 'LESSON_FEEDBACK',
-          sessionId: l.id,
-          assigneeId: l.teacherId,
-          availableAt: l.endsAt,
-          dueAt: nextDay17(l.endsAt),
-          status: l.status === 'CANCELLED' ? 'CANCELLED' : l.feedbackSubmittedAt ? 'DONE' : 'OPEN',
-        },
-      });
-  // Three historical fixtures make the workflow demonstrable even on Monday morning.
-  // IDs are namespaced; an existing lesson is never overwritten on a later seed run.
-  for (let i = 0; i < 3; i++) {
-    const id = `history-${week.toISODate()}-${i}`;
+  // Stable fixture IDs: a finished Sunday lesson with two checked in and one absent,
+  // plus a separately evaluated student ready for an admin follow-up.
+  for (let lessonIndex = 0; lessonIndex < 2; lessonIndex++) {
+    const id = `workflow-demo-${lessonIndex}`;
     if (await prisma.classSession.findUnique({ where: { id } })) continue;
-    const start = week.minus({ days: 1 }).set({ hour: 12 + i, minute: 0 });
-    if (
-      await prisma.classSession.findFirst({
-        where: {
-          status: 'SCHEDULED',
-          startsAt: { lt: start.plus({ hours: 1 }).toJSDate() },
-          endsAt: { gt: start.toJSDate() },
-          OR: [{ teacherId: 'emma' }, { classGroupId: 'group-0' }],
-        },
-      })
-    )
-      continue;
+    const start = week.minus({ days: 1 }).set({ hour: 12 + lessonIndex, minute: 0 });
     await prisma.$transaction(async (tx) => {
-      const student = await tx.student.create({
-        data: {
-          id: `${id}-student`,
-          name: ['Demo · Awaiting feedback', 'Demo · Trial follow-up', 'Demo · Missed trial'][i],
-          yearLevel: 'Year 3',
-          ownerAdminId: 'alice',
-          guardianName: 'Demo Parent',
-          guardianEmail: `${id}@example.com`,
-          preferredChannel: 'EMAIL',
-        },
-      });
       const lesson = await tx.classSession.create({
         data: {
           id,
@@ -231,79 +187,92 @@ async function main() {
           teacherId: 'emma',
           startsAt: start.toJSDate(),
           endsAt: start.plus({ hours: 1 }).toJSDate(),
-          capacity: 8,
         },
       });
-      const feedback =
-        i === 1
-          ? 'Completed the practice independently. Discuss suitable lesson times with the family.'
-          : null;
-      const participant = await tx.sessionParticipant.create({
-        data: {
-          sessionId: id,
-          studentId: student.id,
-          kind: 'TRIAL',
-          attendance: i === 0 ? 'PENDING' : i === 1 ? 'ATTENDED' : 'NO_SHOW',
-          feedback,
-          categorySnapshot: i ? 'TRIAL' : null,
-        },
-      });
-      if (i)
-        await tx.classSession.update({
-          where: { id },
+      for (let i = 0; i < (lessonIndex === 0 ? 3 : 1); i++) {
+        const sid = `${id}-student-${i}`,
+          owner = i === 1 ? 'oliver' : 'alice';
+        await tx.student.create({
           data: {
-            feedbackSubmittedAt: lesson.endsAt,
-            feedbackPayloadHash: digest({
-              summary: '',
-              students: [
-                {
-                  participantId: participant.id,
-                  attendance: participant.attendance,
-                  feedback: feedback ?? '',
-                  abilityNote: '',
-                  preferenceNote: '',
-                },
-              ],
-            }),
+            id: sid,
+            name:
+              lessonIndex === 1
+                ? 'Demo · Follow-up ready'
+                : ['Demo · Evaluation one', 'Demo · Evaluation two', 'Demo · Not checked in'][i],
+            yearLevel: 'Year 3',
+            ownerAdminId: owner,
+            guardianName: 'Demo Parent',
+            guardianRelationship: 'Parent',
+            guardianEmail: `${sid}@example.com`,
+            preferredChannel: 'EMAIL',
           },
         });
-      await tx.task.create({
-        data: {
-          type: 'LESSON_FEEDBACK',
-          sessionId: id,
-          assigneeId: 'emma',
-          availableAt: lesson.endsAt,
-          dueAt: nextDay17(lesson.endsAt),
-          status: i ? 'DONE' : 'OPEN',
-          completedAt: i ? lesson.endsAt : null,
-        },
-      });
-      if (i)
+        await tx.entitlementEntry.create({
+          data: {
+            studentId: sid,
+            actorId: owner,
+            bucket: 'TRIAL',
+            kind: 'INITIAL_TRIAL',
+            quantity: 1,
+            sourceKey: `${sid}:gift`,
+          },
+        });
+        const checked = i !== 2;
+        const feedback =
+          lessonIndex === 1
+            ? 'Completed practice independently; discuss suitable lesson times.'
+            : null;
+        const participant = await tx.sessionParticipant.create({
+          data: {
+            id: `${sid}-participant`,
+            studentId: sid,
+            sessionId: id,
+            kind: 'TRIAL',
+            attendance: checked ? 'ATTENDED' : 'PENDING',
+            checkedInAt: checked ? lesson.startsAt : null,
+            checkedInBy: checked ? 'emma' : null,
+            categorySnapshot: checked ? 'TRIAL' : null,
+            membershipCategorySnapshot: checked ? 'TRIAL_STUDENT' : null,
+            feedback,
+            feedbackSubmittedAt: feedback ? lesson.endsAt : null,
+          },
+        });
+        if (checked)
+          await tx.entitlementEntry.create({
+            data: {
+              studentId: sid,
+              participantId: participant.id,
+              actorId: 'emma',
+              bucket: 'TRIAL',
+              kind: 'CONSUMPTION',
+              quantity: -1,
+              sourceKey: `${sid}:check-in`,
+              createdAt: lesson.startsAt,
+            },
+          });
         await tx.task.create({
           data: {
-            type: 'TRIAL_FOLLOWUP',
+            type: 'TRIAL_FEEDBACK',
             sessionId: id,
             participantId: participant.id,
-            assigneeId: 'alice',
+            assigneeId: 'emma',
             availableAt: lesson.endsAt,
             dueAt: nextDay17(lesson.endsAt),
-            reason: i === 1 ? 'TRIAL_COMPLETED' : 'NO_SHOW',
-            sourceSnapshot: json({
-              className: 'Year 3 · Foundations',
-              courseName: 'Mathematics',
-              teacherName: 'Emma Wilson',
-              startsAt: lesson.startsAt.toISOString(),
-              endsAt: lesson.endsAt.toISOString(),
-            }),
+            status: feedback ? 'DONE' : 'OPEN',
+            completedAt: feedback ? lesson.endsAt : null,
+            sourceSnapshot: feedback
+              ? json({ studentId: sid, feedback, membershipCategory: 'TRIAL_STUDENT' })
+              : undefined,
           },
         });
+        if (feedback) await ensureFirstPurchaseFollowup(tx, participant.id, lesson.endsAt);
+      }
     });
   }
   console.log(
-    `Seed complete: ${count} lessons for Melbourne week ${week.toISODate()}, 60 fictional students, 3 admins, 4 teachers. Existing rows preserved.`,
+    `Seed complete: ${count} lessons for Melbourne week ${week.toISODate()}, plus two finished workflow demo lessons. Existing rows preserved.`,
   );
 }
-
 void main()
   .catch((error: unknown) => {
     console.error(error);

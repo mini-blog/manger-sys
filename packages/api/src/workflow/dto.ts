@@ -9,8 +9,8 @@ import {
   COMMUNICATION_CHANNELS,
   SUPPORTED_LANGUAGES,
   PARTICIPANT_KINDS,
-  FEEDBACK_ATTENDANCES,
-  FOLLOW_UP_OUTCOMES,
+  MANUAL_FOLLOWUP_OUTCOMES,
+  type ManualFollowupOutcome,
   FOLLOWUP_OUTCOMES,
   FOLLOWUP_REASON_TAGS,
   type FollowupOutcome,
@@ -18,7 +18,6 @@ import {
   TASK_STATUSES,
   TASK_TYPES,
   type ParticipantKind,
-  type FeedbackAttendance,
   type TaskStatus,
   type TaskType,
   type SupportedLanguage,
@@ -148,18 +147,6 @@ export class CreateSessionDto {
   @P() @text(1, 128) teacherId!: string;
   @P() @IsISO8601({ strict: true }) startsAt!: string;
   @P() @IsISO8601({ strict: true }) endsAt!: string;
-  @O({
-    deprecated: true,
-    description:
-      'Legacy storage value, not a scheduling limit. Omission defaults to 1 on creation.',
-    minimum: 1,
-    maximum: 2147483647,
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  @Max(2147483647)
-  capacity?: number;
 }
 export class UpdateSessionDto extends PartialType(CreateSessionDto) {
   @P() @IsInt() @Min(1) expectedVersion!: number;
@@ -176,25 +163,11 @@ export class AddParticipantDto {
   @IsIn(PARTICIPANT_KINDS)
   kind!: ParticipantKind;
 }
-export class MoveParticipantDto extends VersionDto {
-  @P() @text(1, 128) targetSessionId!: string;
-}
-export class FeedbackItemDto {
-  @P() @text(1, 128) participantId!: string;
-  @P({ enum: FEEDBACK_ATTENDANCES }) @IsIn(FEEDBACK_ATTENDANCES) attendance!: FeedbackAttendance;
-  @O() @IsOptional() @text() feedback?: string;
-  @O() @IsOptional() @text() abilityNote?: string;
-  @O() @IsOptional() @text() preferenceNote?: string;
-}
-export class FeedbackDto {
+export class ParticipantFeedbackDto {
   @P() @IsInt() @Min(1) expectedVersion!: number;
-  @O() @IsOptional() @text(0, 2000) summary?: string;
-  @P({ type: [FeedbackItemDto] })
-  @IsArray()
-  @ArrayMaxSize(100)
-  @ValidateNested({ each: true })
-  @Type(() => FeedbackItemDto)
-  students!: FeedbackItemDto[];
+  @P({ maxLength: 2000 }) @text(1, 2000) feedback!: string;
+  @O({ maxLength: 2000 }) @IsOptional() @text(0, 2000) abilityNote?: string;
+  @O({ maxLength: 2000 }) @IsOptional() @text(0, 2000) preferenceNote?: string;
 }
 export class CommunicationDto {
   @P() @text(1, 100) guardianNameSnapshot!: string;
@@ -221,15 +194,9 @@ export class FollowUpDto {
   @ValidateNested()
   @Type(() => CommunicationDto)
   communication!: CommunicationDto;
-  @P({ enum: FOLLOW_UP_OUTCOMES })
-  @IsIn(FOLLOW_UP_OUTCOMES)
-  outcome!: string;
-  @O() @IsOptional() @IsISO8601({ strict: true }) nextDueAt?: string;
-  @O() @IsOptional() @text(0, 500) closeReason?: string;
-  @O() @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) firstEnrolledOn?: string;
-}
-export class ReopenDto extends VersionDto {
-  @P() @IsISO8601({ strict: true }) nextDueAt!: string;
+  @P({ enum: MANUAL_FOLLOWUP_OUTCOMES })
+  @IsIn(MANUAL_FOLLOWUP_OUTCOMES)
+  outcome!: ManualFollowupOutcome;
 }
 export class TaskQuery extends PageQuery {
   @O({ enum: TASK_STATUSES })
@@ -241,9 +208,6 @@ export class TaskQuery extends PageQuery {
   @IsIn(TASK_TYPES)
   type?: TaskType;
   @O() @IsOptional() @IsBooleanString() overdue?: string;
-}
-export class EligibilityQuery {
-  @P() @text(1, 128) courseId!: string;
 }
 export class SuggestionRequest {
   @P({ enum: channels }) @IsIn(channels) channel!: string;
@@ -294,14 +258,11 @@ export class LessonDto {
   @P() teacherId!: string;
   @P() startsAt!: string;
   @P() endsAt!: string;
-  @P() capacity!: number;
   @P() participantCount!: number;
   @P() trialCount!: number;
   @P() newCount!: number;
   @P() status!: string;
   @P() version!: number;
-  @P({ type: String, nullable: true }) feedbackSubmittedAt!: string | null;
-  @P({ type: String, nullable: true }) summary!: string | null;
 }
 export class ParticipantDto extends StudentDto {
   @P({ enum: STUDENT_TYPES }) type!: StudentType;
@@ -358,7 +319,6 @@ export class StudentDetailDto extends StudentListItemDto {
   @P() nextCategoryChangeAt!: string;
   @P() canEdit!: boolean;
   @P() version!: number;
-  @P({ type: String, nullable: true }) firstEnrolledOn!: string | null;
   @O() guardianName?: string;
   @O() guardianRelationship?: string;
   @O() guardianPhone?: string;
@@ -414,12 +374,21 @@ export class ChangePageDto {
   @P() page!: number;
   @P() pageSize!: number;
 }
-export class EligibilityDto {
-  @P() remaining!: number;
-  @P() available!: number;
-  @P({ type: String, nullable: true }) reason!: string | null;
-}
 export class TaskDto {
+  @P({ type: String, nullable: true }) completedAt!: string | null;
+  @P({ type: String, nullable: true }) resolvedByEntitlementEntryId!: string | null;
+  @P() taskVersion!: number;
+  @P({ type: Number, nullable: true }) studentVersion!: number | null;
+  @P({ type: String, enum: MEMBERSHIP_CATEGORIES, nullable: true })
+  membershipCategory!: MembershipCategory | null;
+  @P({ type: String, nullable: true }) checkedInAt!: string | null;
+  @P({ type: String, nullable: true }) feedbackSubmittedAt!: string | null;
+  @P({
+    type: 'object',
+    additionalProperties: { type: 'string' },
+    description: 'Whitelisted teaching snapshot; excludes guardian and financial data.',
+  })
+  sourceSnapshot!: Record<string, string>;
   @P() id!: string;
   @P({ enum: TASK_TYPES }) type!: TaskType;
   @P({ enum: TASK_STATUSES }) status!: TaskStatus;
@@ -446,6 +415,7 @@ export class TaskPageDto {
   @P() pageSize!: number;
 }
 export class TaskDetailDto extends TaskDto {
+  @O({ type: [CommunicationViewDto] }) communications?: CommunicationViewDto[];
   @P({ type: LessonDto }) lesson!: LessonDto;
   @P({ type: StudentDetailDto, nullable: true }) student!: StudentDetailDto | null;
   @P({ type: ParticipantDto, nullable: true }) participant!: ParticipantDto | null;

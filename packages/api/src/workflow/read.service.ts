@@ -31,14 +31,11 @@ export function lessonDto(l: FullLesson): D.LessonDto {
     teacherId: l.teacherId,
     startsAt: l.startsAt.toISOString(),
     endsAt: l.endsAt.toISOString(),
-    capacity: l.capacity,
     participantCount: booked.length,
     trialCount: booked.filter((p) => p.student.type === 'TRIAL').length,
     newCount: booked.filter((p) => studentCategory(p.student, l.startsAt) === 'NEW').length,
     status: l.status,
     version: l.version,
-    feedbackSubmittedAt: l.feedbackSubmittedAt?.toISOString() ?? null,
-    summary: l.summary,
   };
 }
 export function participantDto(
@@ -63,7 +60,6 @@ export function participantDto(
       l.teacherId === u.id &&
       l.status === 'SCHEDULED' &&
       l.startsAt <= now &&
-      !l.feedbackSubmittedAt &&
       p.bookingStatus === 'BOOKED' &&
       p.attendance === 'PENDING' &&
       !p.checkedInAt &&
@@ -78,13 +74,46 @@ export function participantDto(
     preferenceNote: visible ? p.preferenceNote : null,
   };
 }
-export function taskDto(t: FullTask): D.TaskDto {
+export function taskDto(t: FullTask, now: Date): D.TaskDto {
   const current = lessonDto(t.session);
   // Pending teaching work follows the current lesson; completed events retain their snapshot.
   const liveTeachingTask = t.status === 'OPEN' && t.type === 'TRIAL_FEEDBACK';
   const s = (liveTeachingTask ? {} : (t.sourceSnapshot ?? {})) as Record<string, string>;
   return {
     id: t.id,
+    completedAt: t.completedAt?.toISOString() ?? null,
+    resolvedByEntitlementEntryId: t.resolvedByEntitlementEntryId,
+    taskVersion: t.version,
+    studentVersion: t.participant?.student.version ?? null,
+    membershipCategory: t.participant
+      ? membership(t.participant.student, now).membershipCategory
+      : null,
+    checkedInAt: t.participant?.checkedInAt?.toISOString() ?? null,
+    feedbackSubmittedAt: t.participant?.feedbackSubmittedAt?.toISOString() ?? null,
+    sourceSnapshot: Object.fromEntries(
+      Object.entries((t.sourceSnapshot ?? {}) as Record<string, unknown>).filter(
+        ([key, value]) =>
+          [
+            'studentId',
+            'studentName',
+            'participantId',
+            'sessionId',
+            'className',
+            'courseId',
+            'courseName',
+            'teacherId',
+            'teacherName',
+            'startsAt',
+            'endsAt',
+            'checkedInAt',
+            'feedback',
+            'abilityNote',
+            'preferenceNote',
+            'feedbackSubmittedAt',
+            'membershipCategory',
+          ].includes(key) && typeof value === 'string',
+      ),
+    ) as Record<string, string>,
     type: t.type,
     status: t.status,
     followupOutcome: t.followupOutcome,
@@ -101,6 +130,36 @@ export function taskDto(t: FullTask): D.TaskDto {
     endsAt: s.endsAt ?? current.endsAt,
     studentId: t.participant?.studentId ?? null,
     studentName: t.participant?.student.name ?? null,
+  };
+}
+/** One predicate for list, badge and direct detail. History does not require current attendance. */
+function visibleTask(user: Actor, status: D.TaskDto['status'], now: Date): Prisma.TaskWhereInput {
+  return {
+    assigneeId: user.id,
+    status,
+    ...(status === 'OPEN' ? { availableAt: { lte: now } } : {}),
+    ...(user.role === 'ADMIN'
+      ? {
+          type: 'TRIAL_FOLLOWUP',
+          purpose: 'FIRST_PURCHASE',
+          participant: { student: { ownerAdminId: user.id } },
+        }
+      : {
+          type: 'TRIAL_FEEDBACK',
+          session: {
+            teacherId: user.id,
+            ...(status === 'OPEN' ? { status: 'SCHEDULED', endsAt: { lte: now } } : {}),
+          },
+          ...(status === 'OPEN'
+            ? {
+                participant: {
+                  bookingStatus: 'BOOKED',
+                  attendance: 'ATTENDED',
+                  checkedInAt: { not: null },
+                },
+              }
+            : {}),
+        }),
   };
 }
 export async function ownedStudent(tx: Tx, user: Actor, id: string) {
@@ -269,92 +328,98 @@ export class ReadService {
     );
   }
   async student(user: Actor, id: string): Promise<D.StudentDetailDto> {
-    return this.db.$transaction(
-      async (tx) => {
-        const now = this.clock.now();
-        const s = required(
-          await tx.student.findUnique({
-            where: { id },
+    const now = this.clock.now();
+    return this.db.$transaction((tx) => this.studentDetail(tx, user, id, now), {
+      isolationLevel: 'RepeatableRead',
+    });
+  }
+  private async studentDetail(
+    tx: Tx,
+    user: Actor,
+    id: string,
+    now: Date,
+    authorizedTask = false,
+  ): Promise<D.StudentDetailDto> {
+    const s = required(
+      await tx.student.findUnique({
+        where: { id },
+        include: {
+          adminLink: {
             include: {
-              adminLink: {
-                include: {
-                  admin: { select: { id: true, name: true } },
-                  createdByAdmin: { select: { id: true, name: true } },
-                },
+              admin: { select: { id: true, name: true } },
+              createdByAdmin: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+    );
+    if (
+      user.role === 'TEACHER' &&
+      !authorizedTask &&
+      !(await tx.student.findFirst({
+        where: { id, ...this.studentScope(user) },
+        select: { id: true },
+      }))
+    )
+      throw new ForbiddenException('This student is not in your lessons.');
+    const canEdit = user.role === 'ADMIN' && s.ownerAdminId === user.id;
+    const participants =
+      canEdit || user.role === 'TEACHER'
+        ? await tx.sessionParticipant.findMany({
+            where: {
+              studentId: id,
+              bookingStatus: 'BOOKED',
+              session: {
+                status: 'SCHEDULED',
+                ...(user.role === 'TEACHER' ? { teacherId: user.id } : {}),
               },
             },
-          }),
-        );
-        if (
-          user.role === 'TEACHER' &&
-          !(await tx.student.findFirst({
-            where: { id, ...this.studentScope(user) },
-            select: { id: true },
-          }))
-        )
-          throw new ForbiddenException('This student is not in your lessons.');
-        const canEdit = user.role === 'ADMIN' && s.ownerAdminId === user.id;
-        const participants =
-          canEdit || user.role === 'TEACHER'
-            ? await tx.sessionParticipant.findMany({
-                where: {
-                  studentId: id,
-                  bookingStatus: 'BOOKED',
-                  session: {
-                    status: 'SCHEDULED',
-                    ...(user.role === 'TEACHER' ? { teacherId: user.id } : {}),
-                  },
-                },
-                include: { session: { include: lessonInclude } },
-                orderBy: [{ session: { startsAt: 'desc' } }, { id: 'desc' }],
-                take: 100,
-              })
-            : [];
-        const base: D.StudentDetailDto = {
-          ...membership(s, now),
-          ...(canEdit ? { firstPurchasedAt: s.firstPurchasedAt?.toISOString() ?? null } : {}),
-          id: s.id,
-          type: s.type,
-          name: s.name,
-          yearLevel: s.yearLevel,
-          gender: s.gender,
-          age: s.age,
-          canEdit,
-          version: s.version,
-          firstEnrolledOn: s.firstEnrolledOn?.toISOString().slice(0, 10) ?? null,
-          teachingRecords: participants.map((p) => ({
-            participantId: p.id,
-            lesson: lessonDto(p.session),
-            ...rosterMembership(s, p.session.startsAt),
-            attendance: p.attendance,
-            feedback: p.feedback,
-          })),
-        };
-        if (user.role === 'ADMIN' && s.adminLink) {
-          base.responsibleAdmin = s.adminLink.admin;
-          base.recordedByAdmin = s.adminLink.createdByAdmin;
-        }
-        if (canEdit) base.guardianAge = s.guardianAge;
-        if (canEdit)
-          for (const field of [
-            'guardianOccupation',
-            'guardianGender',
-            'guardianName',
-            'guardianRelationship',
-            'guardianPhone',
-            'guardianEmail',
-            'guardianWechat',
-            'preferredChannel',
-            'preferredLanguage',
-            'learningGoals',
-            'preferredTimes',
-            'interestedSubjects',
-          ] as const)
-            base[field] = s[field] ?? '';
-        return base;
-      },
-      { isolationLevel: 'RepeatableRead' },
-    );
+            include: { session: { include: lessonInclude } },
+            orderBy: [{ session: { startsAt: 'desc' } }, { id: 'desc' }],
+            take: 100,
+          })
+        : [];
+    const base: D.StudentDetailDto = {
+      ...membership(s, now),
+      ...(canEdit ? { firstPurchasedAt: s.firstPurchasedAt?.toISOString() ?? null } : {}),
+      id: s.id,
+      type: s.type,
+      name: s.name,
+      yearLevel: s.yearLevel,
+      gender: s.gender,
+      age: s.age,
+      canEdit,
+      version: s.version,
+      teachingRecords: participants.map((p) => ({
+        participantId: p.id,
+        lesson: lessonDto(p.session),
+        ...rosterMembership(s, p.session.startsAt),
+        attendance: p.attendance,
+        feedback: p.feedback,
+      })),
+    };
+    if (user.role === 'ADMIN' && s.adminLink) {
+      base.responsibleAdmin = s.adminLink.admin;
+      base.recordedByAdmin = s.adminLink.createdByAdmin;
+    }
+    if (canEdit) base.guardianAge = s.guardianAge;
+    if (canEdit)
+      for (const field of [
+        'guardianOccupation',
+        'guardianGender',
+        'guardianName',
+        'guardianRelationship',
+        'guardianPhone',
+        'guardianEmail',
+        'guardianWechat',
+        'preferredChannel',
+        'preferredLanguage',
+        'learningGoals',
+        'preferredTimes',
+        'interestedSubjects',
+      ] as const)
+        base[field] = s[field] ?? '';
+    return base;
   }
   async communications(user: Actor, id: string, q: D.PageQuery) {
     await ownedStudent(this.db, user, id);
@@ -391,7 +456,7 @@ export class ReadService {
   async changes(user: Actor, id: string, q: D.PageQuery) {
     admin(user);
     required(await this.db.classSession.findUnique({ where: { id }, select: { id: true } }));
-    const where = { OR: [{ sessionId: id }, { targetSessionId: id }] };
+    const where = { sessionId: id };
     const [records, total] = await this.db.$transaction([
       this.db.scheduleChange.findMany({
         where,
@@ -418,15 +483,12 @@ export class ReadService {
     };
   }
   async tasks(user: Actor, q: D.TaskQuery) {
-    const type = user.role === 'ADMIN' ? 'TRIAL_FOLLOWUP' : 'LESSON_FEEDBACK';
+    const type = user.role === 'ADMIN' ? 'TRIAL_FOLLOWUP' : 'TRIAL_FEEDBACK';
     if (q.type && q.type !== type)
       throw new ForbiddenException('This task type is not available to your role.');
     const now = this.clock.now();
     const where: Prisma.TaskWhereInput = {
-      assigneeId: user.id,
-      type,
-      status: q.status ?? 'OPEN',
-      availableAt: { lte: now },
+      ...visibleTask(user, q.overdue === 'true' ? 'OPEN' : (q.status ?? 'OPEN'), now),
       ...(q.overdue === 'true' ? { dueAt: { lt: now }, status: 'OPEN' } : {}),
       ...(q.q
         ? {
@@ -437,59 +499,71 @@ export class ReadService {
           }
         : {}),
     };
-    const [items, total] = await this.db.$transaction([
-      this.db.task.findMany({
-        where,
-        include: taskInclude,
-        orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
-        skip: (q.page - 1) * q.pageSize,
-        take: q.pageSize,
-      }),
-      this.db.task.count({ where }),
-    ]);
-    return { items: items.map(taskDto), total, page: q.page, pageSize: q.pageSize };
+    const [items, total] = await this.db.$transaction(
+      [
+        this.db.task.findMany({
+          where,
+          include: taskInclude,
+          orderBy: [{ dueAt: 'asc' }, { id: 'asc' }],
+          skip: (q.page - 1) * q.pageSize,
+          take: q.pageSize,
+        }),
+        this.db.task.count({ where }),
+      ],
+      { isolationLevel: 'RepeatableRead' },
+    );
+    return { items: items.map((t) => taskDto(t, now)), total, page: q.page, pageSize: q.pageSize };
   }
   async task(user: Actor, id: string): Promise<D.TaskDetailDto> {
     const now = this.clock.now();
-    const t = await assignedTask(this.db, user, id);
-    if (
-      t.type === 'TRIAL_FEEDBACK' &&
-      (t.status !== 'OPEN' ||
-        t.session.status !== 'SCHEDULED' ||
-        t.session.endsAt > now ||
-        t.participant?.bookingStatus !== 'BOOKED' ||
-        !t.participant.checkedInAt ||
-        t.participant.attendance !== 'ATTENDED')
-    )
-      throw new ForbiddenException('This evaluation is not available.');
-    if (t.availableAt > now)
-      throw new ForbiddenException('This task is available after the lesson ends.');
-    const p = t.participant ? t.session.participants.find((p) => p.id === t.participantId) : null;
-    return {
-      ...taskDto(t),
-      lesson: lessonDto(t.session),
-      student: t.participant ? await this.student(user, t.participant.studentId) : null,
-      participant: p ? participantDto(p, t.session, user, now) : null,
-    };
-  }
-  async eligibility(user: Actor, id: string, courseId: string): Promise<D.EligibilityDto> {
-    await ownedStudent(this.db, user, id);
-    required(await this.db.course.findUnique({ where: { id: courseId } }));
-    const rows = await this.db.sessionParticipant.findMany({
-      where: {
-        studentId: id,
-        kind: 'TRIAL',
-        bookingStatus: 'BOOKED',
-        session: { courseId, status: 'SCHEDULED' },
+    return this.db.$transaction(
+      async (tx) => {
+        const existing = required(
+          await tx.task.findUnique({ where: { id }, select: { status: true } }),
+        );
+        const t = await tx.task.findFirst({
+          where: { id, ...visibleTask(user, existing.status, now) },
+          include: taskInclude,
+        });
+        if (!t) throw new ForbiddenException('This task is not available to you.');
+        const p = t.participant
+          ? t.session.participants.find((p) => p.id === t.participantId)
+          : null;
+        const communications =
+          user.role === 'ADMIN'
+            ? await tx.communicationLog.findMany({
+                where: { taskId: id },
+                include: { author: { select: { name: true } } },
+                orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+              })
+            : [];
+        return {
+          ...taskDto(t, now),
+          lesson: lessonDto(t.session),
+          student: t.participant
+            ? await this.studentDetail(tx, user, t.participant.studentId, now, true)
+            : null,
+          participant: p ? participantDto(p, t.session, user, now) : null,
+          ...(user.role === 'ADMIN'
+            ? {
+                communications: communications.map((c) => ({
+                  id: c.id,
+                  studentId: c.studentId,
+                  guardianNameSnapshot: c.guardianNameSnapshot,
+                  channel: c.channel,
+                  content: c.content,
+                  concerns: c.concerns,
+                  coreQuestion: c.coreQuestion,
+                  reasonTags: c.reasonTags,
+                  occurredAt: c.occurredAt.toISOString(),
+                  authorName: c.author.name,
+                  outcome: c.outcome,
+                })),
+              }
+            : {}),
+        };
       },
-      select: { attendance: true },
-    });
-    const used = rows.some((p) => p.attendance === 'ATTENDED');
-    const held = rows.some((p) => p.attendance === 'PENDING');
-    return {
-      remaining: used ? 0 : 1,
-      available: used || held ? 0 : 1,
-      reason: used ? 'TRIAL_EXHAUSTED' : held ? 'TRIAL_ALREADY_RESERVED' : null,
-    };
+      { isolationLevel: 'RepeatableRead' },
+    );
   }
 }

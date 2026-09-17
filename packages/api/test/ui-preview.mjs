@@ -111,7 +111,6 @@ const session = await db.classSession.create({
     teacherId: 'preview-teacher',
     startsAt: starts.toJSDate(),
     endsAt: starts.plus({ hours: 1 }).toJSDate(),
-    capacity: 10,
   },
 });
 await db.sessionParticipant.create({

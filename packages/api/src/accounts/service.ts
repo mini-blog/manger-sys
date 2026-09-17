@@ -100,7 +100,6 @@ export class AccountsService {
                     some: {
                       status: 'OPEN',
                       OR: [
-                        { type: 'LESSON_FEEDBACK' },
                         {
                           type: 'TRIAL_FEEDBACK',
                           participant: { bookingStatus: 'BOOKED', checkedInAt: { not: null } },
@@ -325,7 +324,7 @@ export class AccountsService {
           await tx.task.updateMany({
             where: {
               assigneeId: id,
-              type: { in: ['TRIAL_FEEDBACK', 'LESSON_FEEDBACK'] },
+              type: 'TRIAL_FEEDBACK',
               status: 'OPEN',
             },
             data: { status: 'CANCELLED', version: { increment: 1 } },

@@ -53,13 +53,12 @@ export async function verifyCheckinContracts({
   const teacher = await createTask('TRIAL_FEEDBACK', p.id);
   await createTask('TRIAL_FEEDBACK', p2.id); // Two evaluation tasks in one class are legal.
   const admin = await createTask('TRIAL_FOLLOWUP', p.id, { purpose: 'FIRST_PURCHASE' });
-  await createTask('LESSON_FEEDBACK', null); // Legacy class-level history remains legal.
   await failSql(insertTask, rawTask('TRIAL_FEEDBACK', p.id), '23505');
   await failSql(insertTask, rawTask('TRIAL_FEEDBACK', null), '23514');
   await failSql(insertTask, rawTask('TRIAL_FOLLOWUP', p.id), '23505');
   await failSql(insertTask, rawTask('TRIAL_FOLLOWUP', null), '23514');
-  await failSql(insertTask, rawTask('LESSON_FEEDBACK', p2.id), '23514');
-  await failSql(insertTask, rawTask('LESSON_FEEDBACK', null), '23505');
+  await failSql(insertTask, rawTask('LESSON_FEEDBACK', p2.id), '22P02');
+  await failSql(insertTask, rawTask('LESSON_FEEDBACK', null), '22P02');
   await failSql(
     'UPDATE "Task" SET purpose=$1 WHERE id=$2',
     ['FIRST_PURCHASE', teacher.id],
@@ -227,7 +226,7 @@ export async function verifyCheckinContracts({
   assert.ok(schemas.CommunicationDto.properties.reasonTags.items.enum.includes('PRICE'));
   // No new endpoint is advertised until its actual command is implemented.
   assert.ok(document.paths['/api/participants/{id}/check-in']);
-  assert.equal(document.paths['/api/participants/{id}/feedback'], undefined);
+  assert.ok(document.paths['/api/participants/{id}/feedback']);
   passed(
     'OpenAPI describes new read and communication contracts without claiming unimplemented endpoints',
   );

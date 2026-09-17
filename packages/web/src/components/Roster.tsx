@@ -82,11 +82,9 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
           <Typography variant="body2">
             {l.status === 'CANCELLED'
               ? 'Cancelled'
-              : l.feedbackSubmittedAt
-                ? 'Feedback submitted'
-                : new Date(l.endsAt) <= new Date()
-                  ? 'Ended'
-                  : 'Scheduled'}{' '}
+              : new Date(l.endsAt) <= new Date()
+                ? 'Ended'
+                : 'Scheduled'}{' '}
             · {l.participantCount} students
           </Typography>
           <Stack direction="row" gap={1}>
@@ -127,7 +125,6 @@ function RosterContent({ id, close }: { id: string; close: () => void }) {
                 ))}
               </>
             )}
-            {l.summary && <Typography>Class summary: {l.summary}</Typography>}
           </>
           {edit && <SessionEditor lesson={l} mode={edit} close={() => setEdit(null)} />}
         </>
@@ -192,7 +189,6 @@ function AddStudent({ lesson: l, participants }: { lesson: Lesson; participants:
         (previous) => {
           const next = new URLSearchParams(previous);
           next.delete('student');
-          next.delete('sourceRebookingTaskId');
           next.delete('bucket');
           return next;
         },

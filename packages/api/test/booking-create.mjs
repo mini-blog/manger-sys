@@ -27,7 +27,7 @@ export async function verifyBookingCreate({
         classGroupId: groupId,
         courseId,
         teacherId: t.user.id,
-        capacity: 10,
+
         startsAt: new Date(now().getTime() + offset * 3600000),
         endsAt: new Date(now().getTime() + (offset + 1) * 3600000),
         ...extra,
@@ -81,7 +81,7 @@ export async function verifyBookingCreate({
   const member = await enrol();
   await grant(member, 'REGULAR', 1);
   const memberBefore = await db.student.findUniqueOrThrow({ where: { id: member.id } });
-  assert.equal(memberBefore.firstEnrolledOn, null);
+  assert.equal(memberBefore.type, 'MEMBER');
   const trial = await lesson(),
     regular = await lesson();
   ok(await book(member, trial));
@@ -109,10 +109,7 @@ export async function verifyBookingCreate({
   await grant(onlyRegular, 'REGULAR', 2);
   code(await book(onlyRegular, await lesson()), 'ENTITLEMENT_INSUFFICIENT');
   const unpaid = await enrol();
-  await db.student.update({
-    where: { id: unpaid.id },
-    data: { firstEnrolledOn: new Date('2020-01-01') },
-  });
+
   code(await book(unpaid, await lesson(), { kind: 'REGULAR' }), 'PURCHASE_REQUIRED');
   const regularRace = await enrol(a, { giftTrialCredit: false });
   await grant(regularRace, 'REGULAR', 1);
@@ -131,7 +128,7 @@ export async function verifyBookingCreate({
   );
 
   const guarded = await enrol(),
-    target = await lesson({ capacity: 1 });
+    target = await lesson({});
   const key = randomUUID(),
     first = ok(await book(guarded, target, {}, a, key));
   assert.deepEqual(ok(await book(guarded, target, {}, a, key)), first);

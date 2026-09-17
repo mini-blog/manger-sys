@@ -82,7 +82,7 @@ export async function verifySessionCommands({
   const key = randomUUID();
   const first = ok(await req(a, '/sessions', body(10, 10), { key }));
   assert.deepEqual(ok(await req(a, '/sessions', body(10, 10), { key })), first);
-  assert.equal((await get(first)).capacity, 1);
+  assert.equal('capacity' in (await get(first)), false);
   assert.equal(await db.task.count({ where: { sessionId: first.id } }), 0);
   assert.equal(await db.scheduleChange.count({ where: { sessionId: first.id } }), 1);
   assert.equal(
@@ -103,7 +103,7 @@ export async function verifySessionCommands({
     'session create: optional legacy capacity, no class-level task, teacher-only overlap, adjacency and replay',
   );
 
-  const source = await create(11, 10, { capacity: 2 });
+  const source = await create(11, 10, {});
   const sa = await student(a, { name: 'Session owner A' });
   const sb = await student(b, { name: 'Session owner B' });
   const sc = await student(a, { name: 'Cancelled history' });
@@ -151,13 +151,12 @@ export async function verifySessionCommands({
     teacherId,
     startsAt: at(11, 14),
     endsAt: at(11, 15),
-    capacity: 1,
   };
   ok(await req(a, `/sessions/${source.id}`, edit, { method: 'PATCH', key: editKey }), 200);
   const after = await state(source);
   assert.equal(after.lesson.version, 2);
   assert.equal(after.lesson.courseId, otherCourseId);
-  assert.equal(after.lesson.capacity, 1); // Two students are permitted above this legacy value.
+  assert.equal('capacity' in after.lesson, false); // Two students are permitted above this legacy value.
   assert.deepEqual(after.participants, participantsBefore);
   assert.deepEqual(
     await db.entitlementEntry.findMany({
@@ -211,11 +210,11 @@ export async function verifySessionCommands({
     },
   });
   assert.equal(
-    taskDto(full).courseName,
+    taskDto(full, full.session.endsAt).courseName,
     (await db.course.findUnique({ where: { id: otherCourseId } })).name,
   );
-  assert.equal(taskDto(full).teacherName, 'Replacement teacher');
-  assert.equal(taskDto({ ...full, status: 'DONE' }).courseName, 'Old subject');
+  assert.equal(taskDto(full, full.session.endsAt).teacherName, 'Replacement teacher');
+  assert.equal(taskDto({ ...full, status: 'DONE' }, full.session.endsAt).courseName, 'Old subject');
   ok(await req(a, `/sessions/${source.id}`, edit, { method: 'PATCH', key: editKey }), 200);
   assert.deepEqual(await state(source), after);
   assert.equal(
@@ -245,7 +244,7 @@ export async function verifySessionCommands({
   );
   assert.deepEqual(await state(source), before);
   ok(await patch(source, { startsAt: at(12, 15), endsAt: at(12, 16) }), 200);
-  assert.equal((await get(source)).capacity, 1); // Omitted legacy value is preserved.
+  assert.equal('capacity' in (await get(source)), false); // Omitted legacy value is preserved.
   passed(
     'session update: all active students are checked across admins, cancelled students ignored, failed changes roll back',
   );
@@ -267,7 +266,7 @@ export async function verifySessionCommands({
     { capacity: 0 },
     { capacity: null },
     { capacity: 1.5 },
-    { capacity: 2147483648 },
+    { capacity: 10 },
     { startsAt: at(13, 11), endsAt: at(13, 10) },
     { startsAt: '2031-01-13T10:00:00', endsAt: at(13, 11) },
     { startsAt: '2029-10-07T02:30:00+10:00', endsAt: '2029-10-07T04:00:00+11:00' },
@@ -339,7 +338,7 @@ export async function verifySessionCommands({
 
   const schema = document.components.schemas;
   assert.ok(!schema.CreateSessionDto.required.includes('capacity'));
-  assert.equal(schema.CreateSessionDto.properties.capacity.deprecated, true);
+  assert.equal('capacity' in schema.CreateSessionDto.properties, false);
   assert.equal(schema.UpdateSessionDto.properties.confirmedAffectedParticipantIds, undefined);
   assert.ok(schema.UpdateSessionDto.required.includes('expectedVersion'));
   passed('session contracts: optional capacity and version-only edits documented');

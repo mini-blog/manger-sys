@@ -19,9 +19,6 @@ CMD ["pnpm", "--filter", "@student/api", "dev:container"]
 FROM dependencies AS build
 RUN pnpm --filter @student/api... build
 
-FROM build AS migrate
-CMD ["pnpm", "--filter", "@student/api", "db:migrate"]
-
 FROM node:22.17-bookworm-slim AS api
 WORKDIR /app
 # Keep pnpm's store and package links at their original relative locations.

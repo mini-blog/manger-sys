@@ -1,0 +1,3 @@
+# First observed during the successful local SSH connection on 2026-09-18.
+# This is the server PUBLIC host key, not the deployment user's private key.
+47.79.232.38 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFHJK60gQVe7okCDrsP063ROcqDp52+pDn/FMXHPkRvF

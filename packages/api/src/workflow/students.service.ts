@@ -1,4 +1,3 @@
-import { BUSINESS_TIMEZONE } from '@student/common';
 import { Injectable } from '@nestjs/common';
 import { isEmail } from 'class-validator';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
@@ -121,27 +120,6 @@ export class StudentsService {
         return { id };
       },
     );
-  }
-  async validateEnrolment(tx: Tx, id: string, date?: Date) {
-    if (!date) return;
-    const rows = await tx.sessionParticipant.findMany({
-      where: {
-        studentId: id,
-        kind: 'REGULAR',
-        bookingStatus: 'BOOKED',
-        session: { status: 'SCHEDULED' },
-      },
-      include: { session: true },
-    });
-    const { DateTime } = await import('luxon');
-    if (
-      rows.some(
-        (p) =>
-          DateTime.fromJSDate(p.session.startsAt, { zone: BUSINESS_TIMEZONE }).toISODate()! <
-          date.toISOString().slice(0, 10),
-      )
-    )
-      fail('ENROLMENT_DATE_CONFLICT', 'A regular lesson is earlier than this enrolment date.');
   }
   async log(tx: Tx, user: Actor, studentId: string, body: D.CommunicationDto, outcome?: string) {
     const s = await ownedStudent(tx, user, studentId);

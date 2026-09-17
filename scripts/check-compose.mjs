@@ -27,8 +27,10 @@ const fallback = config('compose.yaml', '.env.example');
 assert.deepEqual(fallback.services, dev.services);
 assert.notEqual(dev.name, prod.name);
 for (const c of [dev, prod]) {
-  assert.equal(c.services.migrate.depends_on.db.condition, 'service_healthy');
-  assert.equal(c.services.api.depends_on.migrate.condition, 'service_completed_successfully');
+  assert.deepEqual(Object.keys(c.services).sort(), ['api', 'db', 'web']);
+  assert.equal(c.services.api.depends_on.db.condition, 'service_healthy');
+  assert.equal(c.services.db.build.dockerfile, 'packages/database/Dockerfile');
+  assert.ok(c.services.db.healthcheck.test.join(' ').includes('-h 127.0.0.1'));
   assert.equal(c.services.web.depends_on.api.condition, 'service_healthy');
   for (const service of ['api', 'db', 'web']) assert.ok(c.services[service].healthcheck);
   assert.ok(c.services.db.volumes.some((v) => v.type === 'volume'));
@@ -51,7 +53,7 @@ for (const service of ['api', 'web']) {
   assert.equal(dev.services[service].build.target, 'development');
 }
 assert.equal(prod.services.api.environment.NODE_ENV, 'production');
-for (const service of ['api', 'db', 'migrate']) {
+for (const service of ['api', 'db']) {
   assert.equal(prod.services[service].ports?.length ?? 0, 0);
 }
 assert.deepEqual(

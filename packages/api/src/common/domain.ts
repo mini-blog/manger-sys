@@ -36,12 +36,6 @@ export function required<T>(value: T | null | undefined): T {
 export function version(actual: number, expected: number) {
   if (actual !== expected) fail('VERSION_CONFLICT', 'This record changed. Reload before saving.');
 }
-export function dateOnly(value: string): Date {
-  const parsed = DateTime.fromISO(value, { zone: 'UTC' });
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !parsed.isValid || parsed.toISODate() !== value)
-    bad('Enter a valid calendar date.');
-  return parsed.toJSDate();
-}
 export function instant(value: string, rejectAmbiguous = false): Date {
   if (!/(Z|[+-]\d{2}:\d{2})$/.test(value)) bad('Time must include its UTC offset.');
   const parsed = DateTime.fromISO(value, { setZone: true });
@@ -59,23 +53,6 @@ export function nextDay17(date: Date) {
     .plus({ days: 1 })
     .set({ hour: 17, minute: 0, second: 0, millisecond: 0 })
     .toJSDate();
-}
-export function category(
-  kind: string,
-  enrolled: Date | null,
-  starts: Date,
-  snapshot?: string | null,
-) {
-  if (snapshot) return snapshot;
-  if (kind === 'TRIAL') return 'TRIAL';
-  if (!enrolled) return 'EXISTING';
-  const lesson = DateTime.fromJSDate(starts, { zone: ZONE }).toISODate()!;
-  const first = enrolled.toISOString().slice(0, 10);
-  const days = DateTime.fromISO(lesson, { zone: 'UTC' }).diff(
-    DateTime.fromISO(first, { zone: 'UTC' }),
-    'days',
-  ).days;
-  return days >= 0 && days < 7 ? 'NEW' : 'EXISTING';
 }
 export const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 export function canonical(value: unknown): string {
