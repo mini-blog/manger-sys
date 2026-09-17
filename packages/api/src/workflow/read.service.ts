@@ -4,7 +4,7 @@ import { Prisma } from '../generated/prisma/client';
 import { Actor, admin, bad, Clock, owner, required, Tx } from '../common/domain';
 import * as D from './dto';
 import { weekBounds } from '../schedule/time';
-import { membership, membershipBounds, studentCategory } from './membership';
+import { membership, membershipBounds, rosterMembership, studentCategory } from './membership';
 import { MEMBERSHIP_CATEGORIES, type MembershipCategory } from '@student/common';
 export const lessonInclude = {
   classGroup: true,
@@ -54,7 +54,7 @@ export function participantDto(
     participantId: p.id,
     kind: p.kind,
     type: p.student.type,
-    category: studentCategory(p.student, l.startsAt),
+    ...rosterMembership(p.student, l.startsAt),
     bookingStatus: p.bookingStatus,
     attendance: p.attendance,
     version: p.version,
@@ -151,7 +151,12 @@ export class ReadService {
       throw new ForbiddenException('You can only view your assigned lessons.');
     const rows = l.participants.map((p) => participantDto(p, l, user));
     const rank: Record<string, number> = { TRIAL: 0, NEW: 1, EXISTING: 2 };
-    rows.sort((a, b) => rank[a.category] - rank[b.category] || a.name.localeCompare(b.name));
+    rows.sort(
+      (a, b) =>
+        rank[a.category] - rank[b.category] ||
+        a.name.localeCompare(b.name) ||
+        a.participantId.localeCompare(b.participantId),
+    );
     return {
       lesson: lessonDto(l),
       participants: rows.filter((p) => p.bookingStatus === 'BOOKED'),
@@ -283,7 +288,7 @@ export class ReadService {
                   },
                 },
                 include: { session: { include: lessonInclude } },
-                orderBy: { session: { startsAt: 'desc' } },
+                orderBy: [{ session: { startsAt: 'desc' } }, { id: 'desc' }],
                 take: 100,
               })
             : [];
@@ -302,6 +307,7 @@ export class ReadService {
           teachingRecords: participants.map((p) => ({
             participantId: p.id,
             lesson: lessonDto(p.session),
+            ...rosterMembership(s, p.session.startsAt),
             attendance: p.attendance,
             feedback: p.feedback,
           })),

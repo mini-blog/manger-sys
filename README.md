@@ -188,3 +188,5 @@ pnpm preview:entitlements
 学生身份按Student.type（TRIAL/MEMBER）保存：默认试听生，首次正式卡发放转会员。所有课次都是正常课程，预约kind仅是所用课时卡。迁移202609170007_student_type已在隔离预览库应用。
 
 04b已完成：取消单个未来预约仅释放占用、不新增余额流水；试听生生成负责人REBOOKING待办，会员不因用试听卡取消而生成试听生待办。同一预约再次取消按参与版本识别新事件，保留原任务与沟通历史。04e恢复已完成重新校验课时/容量/冲突及本来源精确关单。04c同科目换课已完成：保留原卡、仅转移原占用、可恢复目标取消行；失败整体回滚。只处理明确来源待办，连续换课保持重约关联，换出/换入均有审计记录。见[换课验收](docs/BOOKING-MOVE-MILESTONE.md)。
+
+04d查询已接入：名单和教学记录返回membershipCategory（TRIAL_STUDENT/NEW_MEMBER/MEMBER）及兼容category；按课次当地日期计算，会员使用试听卡或查看购课前记录也不降为试听生。课表人数使用相同规则，Teacher只看本人教学记录，其他Admin的个体反馈保持隐藏。接口与common生成类型已同步，见[名单查询验收](docs/ROSTER-READ-MILESTONE.md)。

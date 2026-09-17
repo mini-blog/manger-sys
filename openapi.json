@@ -2080,6 +2080,18 @@
           "lesson": {
             "$ref": "#/components/schemas/LessonDto"
           },
+          "category": {
+            "type": "string"
+          },
+          "membershipCategory": {
+            "type": "string",
+            "enum": [
+              "TRIAL_STUDENT",
+              "NEW_MEMBER",
+              "MEMBER"
+            ],
+            "description": "Same live classification as the lesson roster; historical snapshots do not override it."
+          },
           "attendance": {
             "type": "string"
           },
@@ -2091,6 +2103,8 @@
         "required": [
           "participantId",
           "lesson",
+          "category",
+          "membershipCategory",
           "attendance",
           "feedback"
         ]
@@ -2643,6 +2657,15 @@
           "category": {
             "type": "string"
           },
+          "membershipCategory": {
+            "type": "string",
+            "enum": [
+              "TRIAL_STUDENT",
+              "NEW_MEMBER",
+              "MEMBER"
+            ],
+            "description": "Live student identity, classified at the lesson date in Australia/Melbourne."
+          },
           "bookingStatus": {
             "type": "string"
           },
@@ -2676,6 +2699,7 @@
           "participantId",
           "kind",
           "category",
+          "membershipCategory",
           "bookingStatus",
           "attendance",
           "version",

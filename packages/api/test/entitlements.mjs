@@ -8,6 +8,7 @@ import { verifyStudentType } from './student-type.mjs';
 import { verifyBookingCancel } from './booking-cancel.mjs';
 import { verifyBookingRestore } from './booking-restore.mjs';
 import { verifyBookingMove } from './booking-move.mjs';
+import { verifyRosterRead } from './roster-read.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
 assert.equal(process.env.ENTITLEMENT_TEST_ISOLATED, 'true', 'Run pnpm test:entitlements.');
 assert.equal(new URL(process.env.DATABASE_URL).pathname, '/entitlement_test');
@@ -941,6 +942,21 @@ try {
     passed,
     teaching: app.get(TeachingService),
   });
+  await verifyRosterRead({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    groupId,
+    now,
+    passed,
+    document,
+    userIds,
+  });
   console.log(
     `Entitlement integration passed (${groups} groups; isolated PostgreSQL; no production migration or real Qwen call).`,
   );
@@ -951,7 +967,7 @@ try {
   await db.task.deleteMany({ where: { assigneeId: { in: userIds } } });
   await db.entitlementEntry.deleteMany({ where: { student: { ownerAdminId: { in: userIds } } } });
   await db.sessionParticipant.deleteMany({ where: { student: { ownerAdminId: { in: userIds } } } });
-  await db.classSession.deleteMany({ where: { teacherId: userIds[2] } });
+  await db.classSession.deleteMany({ where: { teacherId: { in: userIds } } });
   await db.student.deleteMany({ where: { ownerAdminId: { in: userIds } } });
   await db.mutationReceipt.deleteMany({ where: { userId: { in: userIds } } });
   await db.authSession.deleteMany({ where: { userId: { in: userIds } } });

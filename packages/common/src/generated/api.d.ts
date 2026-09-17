@@ -564,6 +564,12 @@ export interface components {
         TeachingRecordDto: {
             participantId: string;
             lesson: components["schemas"]["LessonDto"];
+            category: string;
+            /**
+             * @description Same live classification as the lesson roster; historical snapshots do not override it.
+             * @enum {string}
+             */
+            membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
             attendance: string;
             feedback: string | null;
         };
@@ -707,6 +713,11 @@ export interface components {
              */
             kind: "TRIAL" | "REGULAR";
             category: string;
+            /**
+             * @description Live student identity, classified at the lesson date in Australia/Melbourne.
+             * @enum {string}
+             */
+            membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
             bookingStatus: string;
             attendance: string;
             version: number;

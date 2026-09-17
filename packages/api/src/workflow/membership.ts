@@ -39,6 +39,20 @@ export function studentCategory(
   student: { type: StudentType; firstPurchasedAt: Date | null },
   reference: Date,
 ) {
-  const value = membership(student, reference).membershipCategory;
-  return value === 'TRIAL_STUDENT' ? 'TRIAL' : value === 'NEW_MEMBER' ? 'NEW' : 'EXISTING';
+  return rosterMembership(student, reference).category;
+}
+
+/** Both API labels describe the same live identity at the lesson's local calendar date. */
+export function rosterMembership(
+  student: { type: StudentType; firstPurchasedAt: Date | null },
+  lessonStartsAt: Date,
+) {
+  const { membershipCategory } = membership(student, lessonStartsAt);
+  const category =
+    membershipCategory === 'TRIAL_STUDENT'
+      ? ('TRIAL' as const)
+      : membershipCategory === 'NEW_MEMBER'
+        ? ('NEW' as const)
+        : ('EXISTING' as const);
+  return { membershipCategory, category };
 }

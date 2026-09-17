@@ -294,6 +294,11 @@ export class ParticipantDto extends StudentDto {
   @P({ enum: PARTICIPANT_KINDS, description: 'Funding card, not student or lesson type.' })
   kind!: string;
   @P() category!: string;
+  @P({
+    enum: MEMBERSHIP_CATEGORIES,
+    description: 'Live student identity, classified at the lesson date in Australia/Melbourne.',
+  })
+  membershipCategory!: MembershipCategory;
   @P() bookingStatus!: string;
   @P() attendance!: string;
   @P() version!: number;
@@ -310,6 +315,13 @@ export class RosterDto {
 export class TeachingRecordDto {
   @P() participantId!: string;
   @P({ type: LessonDto }) lesson!: LessonDto;
+  @P() category!: string;
+  @P({
+    enum: MEMBERSHIP_CATEGORIES,
+    description:
+      'Same live classification as the lesson roster; historical snapshots do not override it.',
+  })
+  membershipCategory!: MembershipCategory;
   @P() attendance!: string;
   @P({ type: String, nullable: true }) feedback!: string | null;
 }
