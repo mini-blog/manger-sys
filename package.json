@@ -19,7 +19,8 @@
     "db:seed": "npm run db:seed -w @student/api",
     "openapi:generate": "npm run build -w @student/api && npm run openapi:export -w @student/api && npm run api:generate -w @student/web",
     "format": "prettier --write \"apps/**/src/**/*.{ts,tsx}\" \"apps/**/test/*.{ts,mjs}\" \"apps/**/prisma/seed.ts\" \"*.json\" \"*.yaml\"",
-    "test:integration": "npm run build -w @student/api && node apps/api/test/integration.mjs"
+    "test:integration": "npm run build -w @student/api && node apps/api/test/integration.mjs && node apps/api/test/workflow.mjs",
+    "test:qwen": "npm run build -w @student/api && node apps/api/test/qwen-smoke.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

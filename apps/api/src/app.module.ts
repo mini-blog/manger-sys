@@ -2,7 +2,13 @@ import { Controller, Get, Module } from '@nestjs/common';
 import { ApiOkResponse, ApiProperty, ApiTags } from '@nestjs/swagger';
 import { PrismaService } from './prisma.service';
 import { AuthController, AuthGuard } from './auth/auth';
-import { ScheduleController } from './schedule/schedule';
+import { WorkflowController } from './workflow/controller';
+import { Clock, Commands } from './common/domain';
+import { ReadService } from './workflow/read.service';
+import { StudentsService } from './workflow/students.service';
+import { TeachingService } from './workflow/teaching.service';
+import { TasksService } from './workflow/tasks.service';
+import { AiService, QwenProvider } from './workflow/ai.service';
 
 class HealthDto {
   @ApiProperty() status!: string;
@@ -22,7 +28,18 @@ class HealthController {
 }
 
 @Module({
-  controllers: [HealthController, AuthController, ScheduleController],
-  providers: [PrismaService, AuthGuard],
+  controllers: [HealthController, AuthController, WorkflowController],
+  providers: [
+    PrismaService,
+    AuthGuard,
+    Clock,
+    Commands,
+    ReadService,
+    StudentsService,
+    TeachingService,
+    TasksService,
+    AiService,
+    QwenProvider,
+  ],
 })
 export class AppModule {}

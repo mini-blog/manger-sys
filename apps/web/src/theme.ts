@@ -4,16 +4,16 @@ export const theme = createTheme({
   palette: {
     primary: { main: '#225e4e' },
     secondary: { main: '#b86b24' },
-    background: { default: '#f5f6f3', paper: '#fff' },
-    text: { primary: '#20372f', secondary: '#68786f' },
+    background: { default: '#f7f8fa', paper: '#fff' },
+    text: { primary: '#24282d', secondary: '#687078' },
   },
   typography: {
     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    h4: { fontWeight: 650, letterSpacing: '-1px' },
+    h4: { fontWeight: 650, fontSize: '1.6rem', letterSpacing: '-0.4px' },
     h5: { fontWeight: 650 },
     button: { textTransform: 'none', fontWeight: 600 },
   },
-  shape: { borderRadius: 12 },
+  shape: { borderRadius: 6 },
   components: {
     MuiButton: { defaultProps: { disableElevation: true } },
     MuiPaper: {

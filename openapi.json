@@ -108,17 +108,395 @@
         ]
       }
     },
+    "/api/students": {
+      "get": {
+        "operationId": "WorkflowController_listStudents",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mine",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      },
+      "post": {
+        "operationId": "WorkflowController_createStudent",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStudentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/students/{id}": {
+      "get": {
+        "operationId": "WorkflowController_student",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      },
+      "patch": {
+        "operationId": "WorkflowController_updateStudent",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStudentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/students/{id}/communications": {
+      "get": {
+        "operationId": "WorkflowController_communications",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommunicationPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      },
+      "post": {
+        "operationId": "WorkflowController_communicate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommunicationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/students/{id}/trial-eligibility": {
+      "get": {
+        "operationId": "WorkflowController_eligibility",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "courseId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
     "/api/sessions": {
       "get": {
-        "operationId": "ScheduleController_list",
+        "operationId": "WorkflowController_sessions",
         "parameters": [
           {
             "name": "week",
             "required": true,
             "in": "query",
-            "description": "Any date in the requested Melbourne week (YYYY-MM-DD).",
             "schema": {
-              "example": "2026-09-14",
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "classGroupId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "courseId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "teacherId",
+            "required": false,
+            "in": "query",
+            "schema": {
               "type": "string"
             }
           }
@@ -144,13 +522,191 @@
           }
         ],
         "tags": [
-          "Timetable"
+          "Workflow"
+        ]
+      },
+      "post": {
+        "operationId": "WorkflowController_createSession",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/sessions/options": {
+      "get": {
+        "operationId": "WorkflowController_options",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionOptionsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/sessions/{id}": {
+      "patch": {
+        "operationId": "WorkflowController_updateSession",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/sessions/{id}/cancel": {
+      "post": {
+        "operationId": "WorkflowController_cancelSession",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
         ]
       }
     },
     "/api/sessions/{id}/participants": {
       "get": {
-        "operationId": "ScheduleController_roster",
+        "operationId": "WorkflowController_roster",
         "parameters": [
           {
             "name": "id",
@@ -179,15 +735,618 @@
           }
         ],
         "tags": [
-          "Timetable"
+          "Workflow"
+        ]
+      },
+      "post": {
+        "operationId": "WorkflowController_add",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddParticipantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/participants/{id}/cancel": {
+      "post": {
+        "operationId": "WorkflowController_cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/participants/{id}/restore": {
+      "post": {
+        "operationId": "WorkflowController_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/participants/{id}/move": {
+      "post": {
+        "operationId": "WorkflowController_move",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveParticipantDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/sessions/{id}/changes": {
+      "get": {
+        "operationId": "WorkflowController_changes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangePageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/sessions/{id}/feedback": {
+      "post": {
+        "operationId": "WorkflowController_feedback",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/tasks": {
+      "get": {
+        "operationId": "WorkflowController_listTasks",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "DONE",
+                "CANCELLED"
+              ]
+            }
+          },
+          {
+            "name": "type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "LESSON_FEEDBACK",
+                "TRIAL_FOLLOWUP"
+              ]
+            }
+          },
+          {
+            "name": "overdue",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/tasks/{id}": {
+      "get": {
+        "operationId": "WorkflowController_task",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDetailDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/tasks/{id}/follow-up": {
+      "post": {
+        "operationId": "WorkflowController_followUp",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowUpDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/tasks/{id}/reopen": {
+      "post": {
+        "operationId": "WorkflowController_reopen",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReopenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/tasks/{id}/suggestions": {
+      "post": {
+        "operationId": "WorkflowController_suggest",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestionDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
         ]
       }
     }
   },
   "info": {
     "title": "StudentSys API",
-    "description": "Foundation: authentication and read-only timetable. Trial workflow is planned.",
-    "version": "0.1.0",
+    "description": "Timetable, trial booking, teacher feedback and private administrator follow-up.",
+    "version": "0.2.0",
     "contact": {}
   },
   "tags": [],
@@ -291,6 +1450,127 @@
           "ok"
         ]
       },
+      "StudentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yearLevel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "yearLevel"
+        ]
+      },
+      "StudentPageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StudentDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "CreateStudentDto": {
+        "type": "object",
+        "properties": {
+          "guardianName": {
+            "type": "string"
+          },
+          "guardianRelationship": {
+            "type": "string"
+          },
+          "guardianPhone": {
+            "type": "string"
+          },
+          "guardianEmail": {
+            "type": "string"
+          },
+          "guardianWechat": {
+            "type": "string"
+          },
+          "preferredChannel": {
+            "type": "string",
+            "enum": [
+              "",
+              "EMAIL",
+              "PHONE",
+              "SMS",
+              "WECHAT"
+            ]
+          },
+          "preferredLanguage": {
+            "type": "string",
+            "enum": [
+              "en-AU",
+              "zh-CN"
+            ]
+          },
+          "learningGoals": {
+            "type": "string"
+          },
+          "preferredTimes": {
+            "type": "string"
+          },
+          "interestedSubjects": {
+            "type": "string"
+          },
+          "firstEnrolledOn": {
+            "type": "string",
+            "example": "2026-09-17"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yearLevel": {
+            "type": "string",
+            "enum": [
+              "Foundation",
+              "Year 1",
+              "Year 2",
+              "Year 3",
+              "Year 4",
+              "Year 5",
+              "Year 6",
+              "Year 7",
+              "Year 8",
+              "Year 9",
+              "Year 10",
+              "Year 11",
+              "Year 12",
+              "Not assessed"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "yearLevel"
+        ]
+      },
       "LessonDto": {
         "type": "object",
         "properties": {
@@ -306,6 +1586,9 @@
           "targetLevel": {
             "type": "string"
           },
+          "courseId": {
+            "type": "string"
+          },
           "courseName": {
             "type": "string"
           },
@@ -316,12 +1599,10 @@
             "type": "string"
           },
           "startsAt": {
-            "type": "string",
-            "format": "date-time"
+            "type": "string"
           },
           "endsAt": {
-            "type": "string",
-            "format": "date-time"
+            "type": "string"
           },
           "capacity": {
             "type": "number"
@@ -336,11 +1617,18 @@
             "type": "number"
           },
           "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "feedbackSubmittedAt": {
             "type": "string",
-            "enum": [
-              "SCHEDULED",
-              "CANCELLED"
-            ]
+            "nullable": true
+          },
+          "summary": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
@@ -348,6 +1636,7 @@
           "className",
           "classGroupId",
           "targetLevel",
+          "courseId",
           "courseName",
           "teacherName",
           "teacherId",
@@ -357,7 +1646,453 @@
           "participantCount",
           "trialCount",
           "newCount",
-          "status"
+          "status",
+          "version",
+          "feedbackSubmittedAt",
+          "summary"
+        ]
+      },
+      "TeachingRecordDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string"
+          },
+          "lesson": {
+            "$ref": "#/components/schemas/LessonDto"
+          },
+          "attendance": {
+            "type": "string"
+          },
+          "feedback": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "participantId",
+          "lesson",
+          "attendance",
+          "feedback"
+        ]
+      },
+      "StudentDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yearLevel": {
+            "type": "string"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "number"
+          },
+          "firstEnrolledOn": {
+            "type": "string",
+            "nullable": true
+          },
+          "guardianName": {
+            "type": "string"
+          },
+          "guardianRelationship": {
+            "type": "string"
+          },
+          "guardianPhone": {
+            "type": "string"
+          },
+          "guardianEmail": {
+            "type": "string"
+          },
+          "guardianWechat": {
+            "type": "string"
+          },
+          "preferredChannel": {
+            "type": "string"
+          },
+          "preferredLanguage": {
+            "type": "string"
+          },
+          "learningGoals": {
+            "type": "string"
+          },
+          "preferredTimes": {
+            "type": "string"
+          },
+          "interestedSubjects": {
+            "type": "string"
+          },
+          "teachingRecords": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TeachingRecordDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "yearLevel",
+          "canEdit",
+          "version",
+          "firstEnrolledOn",
+          "teachingRecords"
+        ]
+      },
+      "UpdateStudentDto": {
+        "type": "object",
+        "properties": {
+          "guardianName": {
+            "type": "string"
+          },
+          "guardianRelationship": {
+            "type": "string"
+          },
+          "guardianPhone": {
+            "type": "string"
+          },
+          "guardianEmail": {
+            "type": "string"
+          },
+          "guardianWechat": {
+            "type": "string"
+          },
+          "preferredChannel": {
+            "type": "string",
+            "enum": [
+              "",
+              "EMAIL",
+              "PHONE",
+              "SMS",
+              "WECHAT"
+            ]
+          },
+          "preferredLanguage": {
+            "type": "string",
+            "enum": [
+              "en-AU",
+              "zh-CN"
+            ]
+          },
+          "learningGoals": {
+            "type": "string"
+          },
+          "preferredTimes": {
+            "type": "string"
+          },
+          "interestedSubjects": {
+            "type": "string"
+          },
+          "firstEnrolledOn": {
+            "type": "string",
+            "example": "2026-09-17"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yearLevel": {
+            "type": "string",
+            "enum": [
+              "Foundation",
+              "Year 1",
+              "Year 2",
+              "Year 3",
+              "Year 4",
+              "Year 5",
+              "Year 6",
+              "Year 7",
+              "Year 8",
+              "Year 9",
+              "Year 10",
+              "Year 11",
+              "Year 12",
+              "Not assessed"
+            ]
+          },
+          "expectedVersion": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "ActionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "CommunicationViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "studentId": {
+            "type": "string"
+          },
+          "guardianNameSnapshot": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "authorName": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "studentId",
+          "guardianNameSnapshot",
+          "channel",
+          "content",
+          "occurredAt",
+          "authorName",
+          "outcome"
+        ]
+      },
+      "CommunicationPageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommunicationViewDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "CommunicationDto": {
+        "type": "object",
+        "properties": {
+          "guardianNameSnapshot": {
+            "type": "string"
+          },
+          "relationshipSnapshot": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "EMAIL",
+              "PHONE",
+              "SMS",
+              "WECHAT",
+              "IN_PERSON"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "participantId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "guardianNameSnapshot",
+          "channel",
+          "content",
+          "occurredAt"
+        ]
+      },
+      "EligibilityDto": {
+        "type": "object",
+        "properties": {
+          "remaining": {
+            "type": "number"
+          },
+          "available": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "remaining",
+          "available",
+          "reason"
+        ]
+      },
+      "NamedOptionDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "SessionOptionsDto": {
+        "type": "object",
+        "properties": {
+          "classes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NamedOptionDto"
+            }
+          },
+          "courses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NamedOptionDto"
+            }
+          },
+          "teachers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NamedOptionDto"
+            }
+          }
+        },
+        "required": [
+          "classes",
+          "courses",
+          "teachers"
+        ]
+      },
+      "CreateSessionDto": {
+        "type": "object",
+        "properties": {
+          "classGroupId": {
+            "type": "string"
+          },
+          "courseId": {
+            "type": "string"
+          },
+          "teacherId": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "classGroupId",
+          "courseId",
+          "teacherId",
+          "startsAt",
+          "endsAt",
+          "capacity"
+        ]
+      },
+      "UpdateSessionDto": {
+        "type": "object",
+        "properties": {
+          "classGroupId": {
+            "type": "string"
+          },
+          "courseId": {
+            "type": "string"
+          },
+          "teacherId": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "capacity": {
+            "type": "number"
+          },
+          "expectedVersion": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "confirmedAffectedParticipantIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "reason",
+          "confirmedAffectedParticipantIds"
+        ]
+      },
+      "CancelSessionDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "confirmedAffectedParticipantIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "reason",
+          "confirmedAffectedParticipantIds"
         ]
       },
       "ParticipantDto": {
@@ -372,29 +2107,69 @@
           "yearLevel": {
             "type": "string"
           },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "TRIAL",
-              "REGULAR"
-            ]
+          "participantId": {
+            "type": "string"
           },
-          "isNewToClass": {
+          "kind": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "bookingStatus": {
+            "type": "string"
+          },
+          "attendance": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "canManage": {
             "type": "boolean"
+          },
+          "feedback": {
+            "type": "string",
+            "nullable": true
+          },
+          "abilityNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "preferenceNote": {
+            "type": "string",
+            "nullable": true
           }
         },
         "required": [
           "id",
           "name",
           "yearLevel",
+          "participantId",
           "kind",
-          "isNewToClass"
+          "category",
+          "bookingStatus",
+          "attendance",
+          "version",
+          "canManage",
+          "feedback",
+          "abilityNote",
+          "preferenceNote"
         ]
       },
       "RosterDto": {
         "type": "object",
         "properties": {
+          "lesson": {
+            "$ref": "#/components/schemas/LessonDto"
+          },
           "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParticipantDto"
+            }
+          },
+          "cancelled": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ParticipantDto"
@@ -402,7 +2177,553 @@
           }
         },
         "required": [
-          "participants"
+          "lesson",
+          "participants",
+          "cancelled"
+        ]
+      },
+      "AddParticipantDto": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "REGULAR"
+            ]
+          }
+        },
+        "required": [
+          "studentId",
+          "kind"
+        ]
+      },
+      "VersionDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "reason"
+        ]
+      },
+      "MoveParticipantDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "targetSessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "reason",
+          "targetSessionId"
+        ]
+      },
+      "ChangeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "actorName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "before": {
+            "type": "string"
+          },
+          "after": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "reason",
+          "actorName",
+          "createdAt",
+          "before",
+          "after"
+        ]
+      },
+      "ChangePageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "FeedbackItemDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string"
+          },
+          "attendance": {
+            "type": "string",
+            "enum": [
+              "ATTENDED",
+              "NO_SHOW"
+            ]
+          },
+          "feedback": {
+            "type": "string"
+          },
+          "abilityNote": {
+            "type": "string"
+          },
+          "preferenceNote": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "participantId",
+          "attendance"
+        ]
+      },
+      "FeedbackDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "students": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackItemDto"
+            }
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "students"
+        ]
+      },
+      "TaskDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "participantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "availableAt": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "className": {
+            "type": "string"
+          },
+          "courseName": {
+            "type": "string"
+          },
+          "teacherName": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "studentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "studentName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "version",
+          "sessionId",
+          "participantId",
+          "reason",
+          "availableAt",
+          "dueAt",
+          "className",
+          "courseName",
+          "teacherName",
+          "startsAt",
+          "endsAt",
+          "studentId",
+          "studentName"
+        ]
+      },
+      "TaskPageDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "TaskDetailDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "number"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "participantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "availableAt": {
+            "type": "string"
+          },
+          "dueAt": {
+            "type": "string"
+          },
+          "className": {
+            "type": "string"
+          },
+          "courseName": {
+            "type": "string"
+          },
+          "teacherName": {
+            "type": "string"
+          },
+          "startsAt": {
+            "type": "string"
+          },
+          "endsAt": {
+            "type": "string"
+          },
+          "studentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "studentName": {
+            "type": "string",
+            "nullable": true
+          },
+          "lesson": {
+            "$ref": "#/components/schemas/LessonDto"
+          },
+          "student": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudentDetailDto"
+              }
+            ]
+          },
+          "participant": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ParticipantDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "version",
+          "sessionId",
+          "participantId",
+          "reason",
+          "availableAt",
+          "dueAt",
+          "className",
+          "courseName",
+          "teacherName",
+          "startsAt",
+          "endsAt",
+          "studentId",
+          "studentName",
+          "lesson",
+          "student",
+          "participant"
+        ]
+      },
+      "FollowUpDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          },
+          "communication": {
+            "$ref": "#/components/schemas/CommunicationDto"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "NO_ANSWER",
+              "CONSIDERING",
+              "INTERESTED",
+              "NOT_INTERESTED",
+              "ENROLLED"
+            ]
+          },
+          "nextDueAt": {
+            "type": "string"
+          },
+          "closeReason": {
+            "type": "string"
+          },
+          "firstEnrolledOn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "communication",
+          "outcome"
+        ]
+      },
+      "ReopenDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "nextDueAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "reason",
+          "nextDueAt"
+        ]
+      },
+      "SuggestionRequest": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "EMAIL",
+              "PHONE",
+              "SMS",
+              "WECHAT",
+              "IN_PERSON"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "en-AU",
+              "zh-CN"
+            ]
+          }
+        },
+        "required": [
+          "channel",
+          "language"
+        ]
+      },
+      "ObservationDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "sourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "text",
+          "sourceIds"
+        ]
+      },
+      "EvidenceDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ]
+      },
+      "SuggestionDto": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObservationDto"
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "suggestedNextStep": {
+            "type": "string"
+          },
+          "talkingPoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string",
+            "nullable": true
+          },
+          "messageDraft": {
+            "type": "string",
+            "nullable": true
+          },
+          "source": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "inputRecordIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvidenceDto"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "observations",
+          "questions",
+          "suggestedNextStep",
+          "talkingPoints",
+          "subject",
+          "messageDraft",
+          "source",
+          "generatedAt",
+          "inputRecordIds",
+          "evidence"
         ]
       }
     }

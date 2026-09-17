@@ -2,6 +2,7 @@ import { config } from 'dotenv';
 import { DateTime } from 'luxon';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client';
+import { nextDay17, digest, json } from '../src/common/domain';
 import { hashPassword } from '../src/auth/password';
 
 config({ path: '../../.env', quiet: true });
@@ -111,7 +112,18 @@ async function main() {
           create: { sessionId, studentId, isNewToClass: earlier === 0 },
         });
       }
-      if (slot === 0 && day < 6) {
+      if (
+        slot === 0 &&
+        day < 6 &&
+        !(await prisma.sessionParticipant.findFirst({
+          where: {
+            studentId: `student-${48 + day}`,
+            kind: 'TRIAL',
+            bookingStatus: 'BOOKED',
+            attendance: { in: ['PENDING', 'ATTENDED'] },
+          },
+        }))
+      ) {
         const studentId = `student-${48 + day}`;
         await prisma.sessionParticipant.upsert({
           where: { sessionId_studentId: { sessionId, studentId } },
@@ -121,6 +133,155 @@ async function main() {
       }
       count++;
     }
+  }
+  // Upgrade only missing fields on the known fictional seed records.
+  for (let i = 0; i < 60; i++) {
+    const id = `student-${i}`;
+    await prisma.student.updateMany({
+      where: { id, guardianName: null },
+      data: {
+        guardianName: `Demo guardian ${i + 1}`,
+        guardianEmail: `guardian-${i + 1}@example.com`,
+        guardianRelationship: 'Parent',
+        preferredChannel: 'EMAIL',
+      },
+    });
+    if (i < 48) {
+      const earliest = await prisma.sessionParticipant.findFirst({
+        where: { studentId: id, kind: 'REGULAR' },
+        include: { session: true },
+        orderBy: { session: { startsAt: 'asc' } },
+      });
+      if (earliest)
+        await prisma.student.updateMany({
+          where: { id, firstEnrolledOn: null },
+          data: {
+            firstEnrolledOn:
+              DateTime.fromJSDate(earliest.session.startsAt, { zone: 'Australia/Melbourne' })
+                .minus({ days: i % 3 === 0 ? 0 : 30 })
+                .startOf('day')
+                .toISODate() + 'T00:00:00.000Z',
+          },
+        });
+    }
+  }
+  const lessons = await prisma.classSession.findMany({ where: { id: { startsWith: 'demo-' } } });
+  for (const l of lessons)
+    if (!(await prisma.task.findFirst({ where: { type: 'LESSON_FEEDBACK', sessionId: l.id } })))
+      await prisma.task.create({
+        data: {
+          type: 'LESSON_FEEDBACK',
+          sessionId: l.id,
+          assigneeId: l.teacherId,
+          availableAt: l.endsAt,
+          dueAt: nextDay17(l.endsAt),
+          status: l.status === 'CANCELLED' ? 'CANCELLED' : l.feedbackSubmittedAt ? 'DONE' : 'OPEN',
+        },
+      });
+  // Three historical fixtures make the workflow demonstrable even on Monday morning.
+  // IDs are namespaced; an existing lesson is never overwritten on a later seed run.
+  for (let i = 0; i < 3; i++) {
+    const id = `history-${week.toISODate()}-${i}`;
+    if (await prisma.classSession.findUnique({ where: { id } })) continue;
+    const start = week.minus({ days: 1 }).set({ hour: 12 + i, minute: 0 });
+    if (
+      await prisma.classSession.findFirst({
+        where: {
+          status: 'SCHEDULED',
+          startsAt: { lt: start.plus({ hours: 1 }).toJSDate() },
+          endsAt: { gt: start.toJSDate() },
+          OR: [{ teacherId: 'emma' }, { classGroupId: 'group-0' }],
+        },
+      })
+    )
+      continue;
+    await prisma.$transaction(async (tx) => {
+      const student = await tx.student.create({
+        data: {
+          id: `${id}-student`,
+          name: ['Demo · Awaiting feedback', 'Demo · Trial follow-up', 'Demo · Missed trial'][i],
+          yearLevel: 'Year 3',
+          ownerAdminId: 'alice',
+          guardianName: 'Demo Parent',
+          guardianEmail: `${id}@example.com`,
+          preferredChannel: 'EMAIL',
+        },
+      });
+      const lesson = await tx.classSession.create({
+        data: {
+          id,
+          classGroupId: 'group-0',
+          courseId: 'mathematics',
+          teacherId: 'emma',
+          startsAt: start.toJSDate(),
+          endsAt: start.plus({ hours: 1 }).toJSDate(),
+          capacity: 8,
+        },
+      });
+      const feedback =
+        i === 1
+          ? 'Completed the practice independently. Discuss suitable lesson times with the family.'
+          : null;
+      const participant = await tx.sessionParticipant.create({
+        data: {
+          sessionId: id,
+          studentId: student.id,
+          kind: 'TRIAL',
+          attendance: i === 0 ? 'PENDING' : i === 1 ? 'ATTENDED' : 'NO_SHOW',
+          feedback,
+          categorySnapshot: i ? 'TRIAL' : null,
+        },
+      });
+      if (i)
+        await tx.classSession.update({
+          where: { id },
+          data: {
+            feedbackSubmittedAt: lesson.endsAt,
+            feedbackPayloadHash: digest({
+              summary: '',
+              students: [
+                {
+                  participantId: participant.id,
+                  attendance: participant.attendance,
+                  feedback: feedback ?? '',
+                  abilityNote: '',
+                  preferenceNote: '',
+                },
+              ],
+            }),
+          },
+        });
+      await tx.task.create({
+        data: {
+          type: 'LESSON_FEEDBACK',
+          sessionId: id,
+          assigneeId: 'emma',
+          availableAt: lesson.endsAt,
+          dueAt: nextDay17(lesson.endsAt),
+          status: i ? 'DONE' : 'OPEN',
+          completedAt: i ? lesson.endsAt : null,
+        },
+      });
+      if (i)
+        await tx.task.create({
+          data: {
+            type: 'TRIAL_FOLLOWUP',
+            sessionId: id,
+            participantId: participant.id,
+            assigneeId: 'alice',
+            availableAt: lesson.endsAt,
+            dueAt: nextDay17(lesson.endsAt),
+            reason: i === 1 ? 'TRIAL_COMPLETED' : 'NO_SHOW',
+            sourceSnapshot: json({
+              className: 'Year 3 · Foundations',
+              courseName: 'Mathematics',
+              teacherName: 'Emma Wilson',
+              startsAt: lesson.startsAt.toISOString(),
+              endsAt: lesson.endsAt.toISOString(),
+            }),
+          },
+        });
+    });
   }
   console.log(
     `Seed complete: ${count} lessons for Melbourne week ${week.toISODate()}, 60 fictional students, 3 admins, 4 teachers. Existing rows preserved.`,

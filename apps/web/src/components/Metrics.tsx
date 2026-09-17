@@ -16,13 +16,13 @@ export function Metrics({ lessons }: { lessons: Lesson[] }) {
       {[
         ['Lessons this week', scheduled.length, <CalendarMonthOutlined key="lessons" />],
         [
-          'Trial bookings',
+          'Trial places',
           scheduled.reduce((n, l) => n + l.trialCount, 0),
           <SchoolOutlined key="trials" />,
         ],
         [
-          'Available places',
-          scheduled.reduce((n, l) => n + l.capacity - l.participantCount, 0),
+          'Classes this week',
+          new Set(scheduled.map((l) => l.classGroupId)).size,
           <GroupsOutlined key="places" />,
         ],
       ].map(([label, value, icon]) => (

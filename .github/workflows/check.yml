@@ -1,4 +1,4 @@
-name: Check foundation
+name: Check trial workflow
 on: [push, pull_request]
 jobs:
   check:

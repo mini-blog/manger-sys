@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { ValidationPipe } from '@nestjs/common';
+import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
@@ -12,6 +12,20 @@ export async function createApp() {
   app.use(helmet());
   app.use(cookieParser());
   app.useGlobalPipes(
+    {
+      transform(value: unknown, metadata: { type: string }) {
+        const visit = (v: unknown): void => {
+          if (v === null)
+            throw new BadRequestException({
+              code: 'VALIDATION_FAILED',
+              message: 'Omit optional fields instead of sending null.',
+            });
+          if (v && typeof v === 'object') for (const x of Object.values(v)) visit(x);
+        };
+        if (metadata.type === 'body') visit(value);
+        return value;
+      },
+    },
     new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),
   );
   app.enableShutdownHooks();
@@ -20,9 +34,9 @@ export async function createApp() {
     new DocumentBuilder()
       .setTitle('StudentSys API')
       .setDescription(
-        'Foundation: authentication and read-only timetable. Trial workflow is planned.',
+        'Timetable, trial booking, teacher feedback and private administrator follow-up.',
       )
-      .setVersion('0.1.0')
+      .setVersion('0.2.0')
       .addCookieAuth('student_session')
       .build(),
   );

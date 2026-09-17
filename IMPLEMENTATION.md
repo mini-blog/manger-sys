@@ -1,126 +1,83 @@
-# 学生管理系统 · 工程实现说明
+# 精简切片 · 实现约定
 
-本文件补充 [DESIGN.md](./DESIGN.md) 的工程细节，不替代其中的业务决策，也不表示代码已实现。最终作业目标为咨询、试听、跟进切片；当前仅搭好基础工程，已实现项以 README 为准。以下未实现的流程是后续开发约定，不是完成声明。
+以 [DESIGN.md](./DESIGN.md) 为业务基准，[plan/README.md](./plan/README.md) 为执行入口。旧大范围方案在 docs/archive/expanded-design-v1，仅供历史参考。既有试听切片已实现；本文件中的三类学生Tab、双课时池与权益管理为本轮待开发规格。旧验收仅证明原版，不能视为新规则已实现。
 
-## 1. 技术结构与契约
+## 1. 模型取舍
 
-- 前端：React、TypeScript、MUI、React Router、TanStack Query（React Query）。查询键包含当前用户和筛选条件，退出时清空缓存；成功写入后失效相关学生、课次、待办查询。预约不做乐观成功处理。
-- 后端：NestJS 按 Auth、Students、Teaching、Trials、FollowUps、Ai 分模块。Controller 负责 DTO 和响应，Service 负责对象权限、规则和事务，Prisma 访问 PostgreSQL。单体足以支持题目规模。
-- 契约：NestJS DTO 和 Swagger 注解导出 `openapi.json`，提供 Swagger UI；用 OpenAPI 生成前端类型，通过类型化请求客户端供 React Query 调用。检查生成产物与契约一致。ValidationPipe 独立进行运行时校验，拒绝未知写入字段；TypeScript 类型和 OpenAPI 文档都不构成服务端安全校验。
-- 认证：密码哈希，服务端可撤销会话；技术表 Session 保存用户、会话令牌哈希、过期时间。Cookie 使用 HttpOnly、SameSite，HTTPS 环境使用 Secure；写请求校验 CSRF token。顾问与老师均使用实际账号登录。
-- 编排：Compose 启动 web、api、db、一次性 migrate；数据库健康后迁移，迁移成功后启动 API。web 提供静态文件并反向代理 `/api`。数据库使用持久卷；seed 显式执行且可重复运行，不能随启动重置业务数据。
+不新建Contact、StudentContact、Inquiry、TrialBooking、StudentFeedback或通用业务引擎；联系人在Student上，预约/出勤/个体反馈在SessionParticipant上，机构与班级课表都是ClassSession查询。Course是科目目录、ClassGroup是固定班级分组，保留现有两表和seed，但本版不增加目录CRUD页面。
 
-建议接口按操作定义：登录、登出、当前用户；学生查询、创建和详情；课次筛选；预约与取消试听；老师名单、待补录；提交试听结果；顾问待办、追加沟通；生成草稿。不能通过通用 PATCH 接口绕过状态机。
+Student增加guardianName、guardianRelationship、guardianPhone?、guardianEmail?、guardianWechat?、preferredChannel?、preferredLanguage（en-AU/zh-CN）、learningGoals?、preferredTimes?、interestedSubjects?、firstPurchasedAt?（timestamptz，只由首次正式购课流水或经核对的迁移设置）、version。基础建档可只填姓名/年级，预约前必须有联系人姓名和至少一种联系方式；EMAIL/PHONE/SMS/WECHAT偏好须有对应字段。学生与家长姓名分别保存；联系方式不唯一，电话支持AU与海外格式。先使用原有稳定Course id，意愿只做备注，不作硬性限制。
 
-错误响应统一包含稳定业务码、提示和 requestId。400 表示输入错误，401 未登录，403 无权限，404 不存在，409 业务或版本冲突；例如 `SCHEDULE_CONFLICT`、`SESSION_FULL`、`TRIAL_RESULT_REQUIRED`。查询失败提供重试，写入失败保留表单。
+SessionParticipant继续唯一(sessionId,studentId)，增加bookingStatus BOOKED/CANCELLED、attendance PENDING/ATTENDED/NO_SHOW、feedback?、abilityNote?、preferenceNote?、version。kind TRIAL/REGULAR沿用；取消不删除；恢复同课次预约显式执行，保留ScheduleChange。同科目换课旧行CANCELLED，目标行新建或恢复，来源/目标都留记录。反馈提交后历史参与记录不可直接修改。课时统一由EntitlementEntry流水计算，预约占用仍来自SessionParticipant，不另建预约单、钱包余额缓存或占用表。科目有参与历史（包括取消记录）后不可更改，保持历史课程语义稳定。
 
-## 2. 事务、状态和数据边界
+EntitlementEntry：id、studentId、bucket TRIAL/REGULAR、kind INITIAL_TRIAL/PURCHASE/CONSUMPTION/MIGRATION、quantity（带符号整数，除MIGRATION外非零）、participantId?、actorId?、note?、sourceKey（全局唯一）、createdAt。INITIAL_TRIAL仅TRIAL且正数，每学生唯一；PURCHASE仅REGULAR且正数；CONSUMPTION为-1且必须participantId，每参与者最多一条；MIGRATION非负数，用于核对过的期初导入；0只允许受控导入记录已核对的零余额会员凭证。SQL CHECK约束符号与类型，Service校验来源学生/池对应；外键禁止误删历史。正常单次发放量1–10000，初始量默认1；受控期初迁移数量按对账值处理。流水只追加，不开放PATCH/DELETE、负数购买、任意余额修改、赠送正式课时或退款冲正入口；误登记应经人工核对后安排带审计的修正，不直接改库覆盖历史。
 
-### 咨询与预约
+每个学生两个跨科目通用池，每课次1单位，TRIAL与REGULAR不能互相抵扣。remaining=sum(quantity)，reserved=count(BOOKED/PENDING且对应bucket的参与)，available=remaining-reserved；取消课次内不得残留BOOKED占用。已过期未反馈也占用；ATTENDED在同一事务写-1并结束占用，NO_SHOW只释放。不得出现remaining<reserved或available<0。不允许直接改kind来绕过消费；会员身份并不禁止TRIAL。
 
-建档事务创建 Student、Contact 关联、Inquiry 和咨询 FollowUp；负责人只能取当前顾问，默认 PROSPECT。Inquiry.courseId 与 ClassSession.courseId 必须一致，Inquiry.studentId 必须属于目标学生。至少有一个可联系的主要联系人，姓名不能充当学生唯一标识；同姓名学生可存在。
+Student.firstPurchasedAt为首笔PURCHASE.createdAt（或经核对的MIGRATION凭证中历史首次购课时间）的只读投影，首次发放同事务设置，后续永不重置；新建学生DTO不接受它，Student PATCH也不能设置。正常登记由服务器Clock给时间，不接受客户端回填日期。旧firstEnrolledOn/isNewToClass只保留迁移兼容，不再作为会员凭证或新会员依据。真实旧数据迁移须核对，见plan/01。
 
-### 联系方式与沟通记录
+Task字段：id,type,assigneeId,sessionId,participantId?,status OPEN/DONE/CANCELLED,reason?,sourceSnapshot?,availableAt,dueAt,version,completedAt?,createdAt/updatedAt。Teacher任务participantId必须空且唯一sessionId（按type部分唯一索引）；Admin任务participantId必填且唯一participantId（按type部分唯一索引）。SQL CHECK type与来源字段匹配。Admin任务的sessionId和participantId引用同一课次由Service校验。Admin任务在取消或反馈时保存科目、班级、老师和时间快照；以后课次改时间或替课，已发生事件的上下文不漂移。类型只两种，不开放通用任务类型配置。Admin任务增加purpose=FIRST_PURCHASE/MEMBER_CARE/REBOOKING（Teacher为空），与reason分别表达跟进目的和来源事件；购课自动关闭时记录resolvedByEntitlementEntryId。
 
-直接登录用户仅有 ADMIN 和 TEACHER，家长联系人不自动创建账号。Contact 支持 email、phone、wechatId，preferredChannel 为 EMAIL / PHONE / SMS / WECHAT，preferredLanguage 本次支持 en-AU / zh-CN。至少一种联系信息非空；EMAIL 必须有邮箱、PHONE/SMS 必须有电话、WECHAT 必须有微信号。电话按国际格式规范化、默认国家 AU，允许其他国家号码；不使用中国大陆手机号正则。联系人姓名允许中英文、空格和连字符。
+ScheduleChange记录sessionId、可选targetSessionId/studentId/participantId、actorId、action、reason、before/after Json、requestKey、createdAt；只保存排课/名单必要字段，不保存家长联系方式和密码。CommunicationLog记录学生、可选任务/参与记录、联系人姓名及关系快照、渠道、结果、内容、实际沟通时间和作者；链接对象均必须属于当前学生，不能借id跨对象操作。
 
-StudentContact 的关系可为 PARENT / GUARDIAN / SELF / OTHER；isPrimary 仅表示首选联系人，不自动证明法定监护权或付款责任。家长联系邮箱不加全局唯一约束，也不作为学生标识；一位联系人可以关联多个孩子。员工 User.email 的唯一登录约束与此独立。
+## 2. 可见范围
 
-人工 FollowUpNote 记录 contactId、channel、结果和时间；channel 另支持 IN_PERSON 线下沟通。服务端验证联系人确实关联当前学生；远程渠道须有对应信息，线下无需渠道账号。系统自动关闭待办的 Note 使用 SYSTEM 来源，contactId/channel 为空，不伪装成人工沟通。保存 AI 草稿不生成沟通记录、不关闭或推迟待办；本次不接入发送服务，也不把“复制文案”显示成“发送成功”。
+所有写接口沿用Cookie会话和CSRF。Admin读全局课表和学生基本数据；学生联系方式、沟通、权益余额/流水及个体销售跟进仅负责人读写。会员类型为基础分类字段，可在授权基础列表中返回；Teacher不得取得首次购课精确时间、购买数量、余额或流水。权益管理仅Admin本人学生可查可发，不继承全局课表的修改范围。名单添加/移除/换课只能操作本人学生，课次整体改时间/换老师可操作共享课次，但重查全部学生冲突并留记录。Teacher只看当前分配给自己的课次及名单，不返回家长联系人或销售日志；我的学生由这些课次参与关系获得。Task永远按assigneeId过滤，Admin也不能查询其他人的个人待办。
 
-### 课表与单次调整（目标切片，尚未实现写操作）
+本切片不新增账号管理/密码重置/员工禁用/学生转交接口，避免引入与业务权限不一致的系统管理能力。负责人保持创建时分配；未来转交须同时更新未完成Admin任务的assigneeId，历史作者不改。课前替课原子修改教师任务的assignee，旧老师随即失去该课及任务权限。课后实际教师更正和结果纠错需后续受控审计流程，本版不开放通用PATCH绕过。
 
-ClassGroup 不再绑定唯一 Course，保存名称、目标年级和级别；ClassSession 自己关联科目、实际老师、时间和容量。同班可以在不同课次学习不同科目。每班课表是全机构课表的筛选视图，不能维护两份数据。七天均可排课，60 节是演示规模，不是硬上限。
+## 3. 排课和预约事务
 
-Admin 可调整未来单次课次的科目、老师、时间，名单增减只针对自己负责的学生；Teacher 查看自己的课次并记录反馈，不改排课。Admin 调整共享课次时间会影响其他顾问负责学生，必须重验全部参与者的冲突并形成变更记录供各负责人查看。暂不做“修改所有后续重复课次”。有有效试听时不能直接改科目；先取消或经过重新确认流程，取消预约须保存原科目、老师、时间快照，不随课次变更重写历史。
+POST/PATCH修改都用DTO校验，拒绝未知字段；列表有分页、稳定排序和用户scope。写操作使用Serializable事务，P2034/P2002最多尝试3次。当前以事务级pg_advisory_xact_lock(73192461)统一串行化短业务写操作；锁后重读权限、影响集合及约束。Serializable冲突重试处理等待锁时已获取的旧快照。所有业务命令都经过Commands，读取和LLM不占锁。此规模下先用统一写锁降低实现复杂度，更大并发再按Teacher→Student→ClassSession排序细分。所有外部LLM调用在事务外。
 
-Inquiry 记录 preferredTimeWindows（墨尔本星期、起止时间）及学生年级、初步级别；可以多选。偏好用于筛选和推荐，不等同于已占用时间，Admin 可经沟通选择其他时段。StudentFeedback 的能力观察按科目、课次日期留历史，不形成无依据的永久标签。
+只预约/修改未来SCHEDULED课次。冲突半开区间a.start < b.end && b.start < a.end；检查教师、班级和全部BOOKED学生，取消课次不参与。容量只计BOOKED。Teacher资格验证role=TEACHER。只要有参与历史（包括已取消）就禁止更换Course和ClassGroup；可以调整老师/时间/容量，但不得冲突或超容量，须明确确认受影响学生及写原因。
 
-### 预约事务
+TRIAL预约检查学生归属、联系人、试听available>=1、重复名单、所有科目时间冲突。REGULAR检查已购课及正式available>=1。不限每生每科目一次，初始试听发放多节可预约多次，但每次各占1；不同科目也共享同一池。Teacher不直接发放权益。联系资料不足与余额不足使用不同错误码，不能用填入入学日解决余额不足。
 
-预约事务固定先锁 Student、再锁 ClassSession，锁内复查权限、试听资格、时间冲突和席位后写入。课次状态为 SCHEDULED 或 CANCELLED；日期已过去不代表结果已提交。SCHEDULED 试听即使已过期仍是待处理记录，必须完成结果补录后才能再约同课程。
+取消后同课重新预约使用原行+version并重置为BOOKED/PENDING；必须未开始、无历史已提交出勤、权益可用、无冲突且有席位。同科目换课必须一个事务：验证目标（计算可用时排除自身旧占用）、旧行取消、目标新建/恢复、写双向变更，再处理关联跟进任务；目标满员等失败旧预约保持。不允许把TRIAL静默改REGULAR，同课次试听身份保留；购课后的后续课另加REGULAR。
 
-后续 Enrollment 按当地日期的 `[startsOn, endsOn)` 生成课次参与记录；实际名单、冲突与容量以 SessionParticipant 为准。需要保留来源以支持单课次的临时增减，不能简单把班级成员加回被移除的课次。学生+课次唯一；正式生不能重复占试听席位。当前基础工程直接 seed 具体课次名单，尚未实现 Enrollment。
+同一来源Admin跟进Task只保留一条：取消创建/重开reason=CANCELLED；恢复或换课成功关闭旧OPEN跟进，reason=REBOOKED；之后新的结果提交按有效participant来源创建/重开同一条，reason=TRIAL_COMPLETED/NO_SHOW，并用当前学生owner设assignee。取消/未到purpose=REBOOKING；试听到课按事务内当前会员身份设FIRST_PURCHASE或MEMBER_CARE。已完成的沟通日志不改；排课触发的任务变化随ScheduleChange记录，人工跟进变化随CommunicationLog记录；重复请求不追加多份。
 
-本次固定课次均预先生成，只校验具体课次；后续正式入班必须覆盖入班有效期内的全部排课规则和例外，不能把“已生成几周没冲突”当作永久不冲突。
+所有可重试命令携带Idempotency-Key(UUID)。技术表MutationReceipt唯一(userId,operation,key)，保存规范化请求hash及最小响应；必须包含路径对象ID避免相同正文不同对象混淆。权限验证后，同键同请求返回旧结果、同键不同请求409。receipt与业务同事务，事务失败不保留成功记录；技术表不生成页面。反馈另有源状态唯一保护，换一个幂等键也不能重复消费或建任务。
 
-预约成功关闭对应咨询待办。如果是取消或未到课后的重新预约，关闭同一咨询下旧试听的开放待办，并追加“已重新预约”的系统记录；新试听承接下一步。其他课程咨询的待办保持不变。取消前再次验证开课时间，取消与待办生成原子完成。
+## 4. 老师反馈和待办
 
-### 结果与跟进
+每个有效ClassSession创建时预建一条LESSON_FEEDBACK任务：assignee=teacherId，availableAt=endsAt，dueAt=nextMelbourneDay17(endsAt)。查询只返回availableAt<=Clock.now且符合状态的本人任务；无需cron。历史seed用幂等方式补任务，取消课次关闭任务。未来调整课次同步修改任务availableAt/dueAt及assignee，不能改课后留下旧任务。
 
-Teacher 先填本课总结，再逐个确认试听学生是否到课、个人优势／难点、偏好与建议级别。本课总结不能替代个体反馈。名单按 TRIAL、首次本班上课、其他排序；使用文字标识，不只靠颜色。基础工程中的 isNewToClass 是 seed 根据更早参与记录生成的快照；未来写操作需要同步维护，不接受客户端随意提交“新生”标记。
+未提交课次状态：开始前Upcoming；开课中In progress；结束后Awaiting feedback；feedbackSubmittedAt非空为Feedback submitted。只是展示派生值，不把时间到当作学生ATTENDED。
 
-TrialEntitlement 按学生+科目发放一次：未预约时剩余1、可用1；已预约时剩余1、可用0；确认到课消耗后剩余0。开课前取消、未到课暂释放占用，不消耗；不存在直接修改任意试听余额的接口。结果、权益消耗和按学生生成的待办在同一事务完成，来源约束阻止重复扣次。每条待办附课次日期、科目、实际老师、学生、个人反馈，按当前负责 Admin 路由。
+POST /sessions/:id/feedback只接受当前教师，在endsAt之后提交：expectedVersion、summary?、students[{participantId,attendance,feedback?,abilityNote?,preferenceNote?}]。必须恰好覆盖本课全部BOOKED成员，无重复、无他课ID；全班总结可选，到课试听必须个人feedback，NO_SHOW不强迫写虚构观察。REGULAR也支持可选个人反馈。空课允许明确提交空名单完成老师任务，不产生Admin任务。
 
+单事务检查每人的有效占用，写每人结果及到课者对应池唯一CONSUMPTION流水（正式课同样扣1、未到不扣）、课次feedbackSubmittedAt、老师任务DONE、每名TRIAL的Admin任务。到课生成TRIAL_COMPLETED，purpose由当前会员身份确定；未到生成NO_SHOW且purpose=REBOOKING，dueAt按原课次结束的下一当地日17:00；晚补录不掩盖延误。同结果（全部字段标准化）重试返回原值，修改已提交结果409。没有反馈提交就不创建“试听已完成”的销售跟进；Admin可从课表查看本人学生所在课次仍待老师反馈，但不能读取老师私人任务。
 
-提交结果也遵循学生、课次的锁顺序，校验实际老师和课次状态。ATTENDED 必须填写非空反馈；NO_SHOW 不强求课堂反馈。SCHEDULED 在课次结束后进入“待补录”查询，不能因顾问工作台刷新而自动变成 NO_SHOW。老师能够通过历史日期或待补录入口访问它。
+## 5. 跟进、沟通与AI
 
-结果写入与来源唯一的 FollowUp 创建在同一事务完成。相同结果和反馈的重试返回原值，不同内容返回 409；本次不提供结果更正接口。错误结果的更正、正式扣费冲正属于后续需记录审计的操作。
+Admin我的待办按到期排序，含取消/未到/到课三种明确原因。独立POST /students/:id/communications可在预约前、待上课、跟进关闭后追加记录；不要求Task OPEN，不能用沟通记录绕过Task状态变更权限。记录实际联系人姓名/关系快照、渠道EMAIL/PHONE/SMS/WECHAT/IN_PERSON、occurredAt和正文；渠道校验使用所记录的实际联系信息，首版默认当前联系人，不提供多联系人管理。
 
-FollowUp 的 sourceInquiryId、sourceTrialId 二选一，以数据库检查约束保证恰好一个非空，各自有唯一约束。跟进提交携带请求幂等键及 expectedVersion：同用户同键同请求返回原结果，同键不同内容返回冲突；不同请求用条件更新 version，只有一个能写入。追加 Note、更新待办和保存幂等结果在同一事务完成，避免网络重试产生重复沟通记录。
+POST /tasks/:id/follow-up只允许本人TRIAL_FOLLOWUP OPEN：expectedVersion、communication正文、outcome NO_ANSWER/CONSIDERING/INTERESTED/NOT_INTERESTED/RESOLVED、nextDueAt?、closeReason?。前三者保持OPEN且nextDueAt未来；NOT_INTERESTED关闭，RESOLVED只用于会员回访或无需重约的服务处理，均须原因。取消客户端ENROLLED/firstEnrolledOn写入，不能用一句“已报名”或关闭待办变会员。历史ENROLLED日志保留展示，不据此伪造购课记录。购课入口带studentId进入权益管理，确认发放才完成首次购课。
 
-后续新增入班、换课、替课时必须采用同一并发保护协议；不能假设现有学生锁会自动保护所有未来接口。涉及多学生或多课次时固定按 ID 排序加锁；死锁或序列化失败只做有界重试。
+POST /entitlements/grants {studentId,quantity:1..10000,note?:<=1000}，Idempotency-Key必填，只负责人Admin；类型固定PURCHASE、池固定REGULAR，客户端不能改类型、操作者或首次购课时间。事务内写流水、若空设置firstPurchasedAt并递增Student.version、关闭该学生所有OPEN/FIRST_PURCHASE任务（reason=PURCHASE_RECORDED、resolvedByEntitlementEntryId指向本笔，递增Task.version），写receipt。一个环节失败全部回滚，重复请求不重复加课；后续续购不重设日期。即使没有任何试听预约也可购课。发放不伪造CommunicationLog；发放流水本身是自动关单的审计依据。
 
-### 权限与隐私
+购课不关闭REBOOKING或MEMBER_CARE，避免丢失未到重约/教学回访；若购课在老师反馈之前，该试听结束后直接建会员回访而不是首次购课任务。反馈与购课共用写锁，无论先后顺序最终都不残留已购课学生的开放FIRST_PURCHASE。人工跟进与购课并发用Task.version阻止旧页面覆盖自动关单。
 
-顾问基础概览仅返回姓名、负责人和生命周期；联系人、咨询、试听详细反馈、跟进记录及 AI 草稿均需负责人权限。老师只能看到自己课次的姓名、试听标签、必要课程意向和教学反馈。不能把完整数据库对象序列化后再交给前端隐藏。
+沟通日志与人工任务更新同事务；关闭后仍可独立记录。reopen需原因、未来时间和version，且无更新的有效试听来源冲突；已会员禁止重开FIRST_PURCHASE（409 MEMBER_ALREADY_PURCHASED），会员关怀可以独立记沟通或处理该学生新产生的MEMBER_CARE任务。
 
-联系人可能被不同顾问负责的兄弟姐妹共用：本切片不暴露全局联系人搜索、按任意 contactId 关联或共享联系人编辑接口；建档新建联系人，历史共享关系由 seed 展示。后续联系人合并、全局修改需要单独权限与审计，不能因为能修改一个学生就间接修改另一个学生的联系方式。
+千问入口绑定taskId，限定该学生、该科目、本次课堂反馈与相关人工沟通，不混用其他科目购买意向。加入服务端推导的会员类型、任务purpose；仅声明人工购课记录，不声明支付已核验。会员任务生成学习适应/试听感受回访，不能生成“首次报名”销售话术；不传具体购买数量/财务流水。响应schema：summary、observations[{text,sourceIds}]、questions[]、suggestedNextStep、talkingPoints[]、subject?、messageDraft?；en-AU/zh-CN，EMAIL需subject/body，PHONE/IN_PERSON用提纲。来源ID逐项验证，文本长度上限，额外字段拒绝。无依据不推断；不输出成交百分比、优惠或虚构付款结论。返回source=llm/template，由服务端附加生成时间和来源记录ID。
 
-## 3. 时间与演示
+用户点“生成建议”才调用；无key、超时、上游错误、JSON或引用无效时返回同渠道模板，任务始终可人工处理。10秒超时，按用户限频。仅发送必要文本，屏蔽档案内已知姓名/联系方式及可识别邮箱/电话模式；自由文本脱敏不是完备的隐私保证，录入者仍应避免额外个人敏感信息；输入资料不能修改模型规则，无工具写操作。草稿暂留页面内存，不算沟通、不改Task，复制不算发送。API key只在后端，真实provider成功与降级需分别验证。
 
-课次使用 PostgreSQL `timestamptz`，Prisma schema 显式映射原生类型；入班边界使用 date。接口时间传带偏移量的 ISO 8601。服务器决定“今天”“下一个日历日”“逾期”和筛选区间，全部按 Australia/Melbourne 计算，不能沿用操作者电脑的 Asia/Shanghai。
+## 6. 时间和标签
 
-后续每周模板保存班级、科目、老师、当地星期、时间和时区，逐次转换为具体时间点；夏令时缺失或重复的当地时间须显式报错。当前文档中的“次日 17:00”是日历日，不跳过周末，作为待确认业务假设。
+DateTime使用timestamptz；传带offset的ISO时间，展示固定Melbourne/en-AU。输入不存在或双解的当地时间报错，星期模板暂不实现。
 
-界面暂用英文，日期 locale 为 en-AU（如 16/09/2026），时间统一 24 小时制；locale 与时区分别配置，不能用 locale 代替时区。家长沟通语言独立于界面语言。日期型字段不先转换 UTC 再回显。课次按机构实际安排生成，不自动认为周末或维州学校假期停课。上述界面语言、营业日和沟通偏好均是待业务确认的产品约定。
+membershipCategory派生枚举：TRIAL_STUDENT（firstPurchasedAt为空）、NEW_MEMBER、MEMBER。令d为首次购课的墨尔本当地日期；参考日期落[d,d+7日)为NEW_MEMBER，达到d+7日为MEMBER。学生页参考今天；课次名单参考课次日期（若早于d则当时非会员）。7日是日历日，不是168小时。续购、建档日期、余额清零都不改变d。服务端Clock唯一计算，返回membershipAsOfDate及下一个当地零点的nextCategoryChangeAt；前端到点、恢复前台及购课成功时刷新，不能刷新浏览器才跨Tab。列表分页、Tab计数、筛选使用同一参考日期，不先分页后分类。
 
-目标 Seed 包含3顾问、4老师、60学生、每周60课次及试听闭环边界场景。当前已生成员工、虚构学生、12个班级、3门科目、本周七天60课次及正式／试听名单；尚未 seed 咨询、试听权益和待办。日期按 seed 执行时的墨尔本日期生成。
+名单主标签kind=TRIAL始终为Trial并置顶，另返membershipCategory可显示New member/Member；REGULAR显示New member或Member。不将学生页“试听学生”等同于本次Trial。未来课次重算；首次提交反馈保存categorySnapshot（兼容TRIAL/NEW/EXISTING主标签）及membershipCategorySnapshot，以课次日期判断；已提交历史不因续购、今天日期或后来补录改变。
 
-正常演示先创建咨询并预约未来课次，再用历史待补录样例演示老师结果与顾问跟进。若要自动验证同一条新建记录的完整闭环，在集成测试注入可控 Clock 推进时间；不增加可供普通用户修改系统时间或绕过结束时间的 HTTP 接口。临近下课的真实样例也可用于现场演示。
+## 7. 交付边界
 
-## 4. 千问接入与降级
+Admin四个主入口：我的待办、课表、学生、权益管理。Teacher仅前三个；学生列表也有三Tab但限定本人授课关系且不显示购买明细。日历与列表同一数据源。学生默认试听学生Tab，搜索/分页/Tab在URL，切Tab重置页码，计数按当前搜索与权限统计。新增学生弹窗录初始试听课时，不在学生编辑里改余额；详情可以跳转权益管理并预选学生。购课成功跳到该学生所在Tab并刷新数量/详情/权益/名单/受影响待办；默认建档成功回试听学生Tab。
 
-NestJS 通过千问 OpenAI 兼容接口调用，配置 `QWEN_API_KEY`、`QWEN_BASE_URL`、`QWEN_MODEL`。这是模型调用协议，与本系统的 OpenAPI 接口规范不同。密钥留在服务端环境，仓库只提交 `.env.example` 占位符。
+权益管理列表按本人学生展示两个池的余额/占用/可用；支持搜索、分页与逐人流水，新增弹窗仅学生、购买课时、可选备注，提交按钮“确认发放”。没有套餐下拉、价格计算、支付按钮或卡片式宣传。错误就地提示且保留输入；二次点击复用同一请求幂等键，成功后的新购课使用新键。
 
-目标地域及模型须验证结构化输出能力：支持时使用严格 JSON Schema；否则配置 JSON Object 并在提示中明确 JSON 要求。JSON Object 只保证 JSON 形式，必须独立验证结构。参考[千问结构化输出官方文档](https://docs.modelstudio.console.alibabacloud.com/zh/model-studio/qwen-structured-output)。
-
-生成请求选择关联的 contactId，默认采用其 preferredChannel/preferredLanguage，顾问可显式选择其他可用渠道；模型只接收渠道和语言，不接收联系人 ID 或实际地址。模型内容统一按所选语言生成，英文使用 en-AU；返回结构所有键必有：summary（1–500 字符）、intentSignal（POSITIVE / UNCERTAIN / NEGATIVE / INSUFFICIENT）、evidence（0–5条，包含 recordId 与 reason）、concerns（最多5条）、nextAction（1–500字符）、talkingPoints（1–5 条，各 1–200 字符）、subject（string 或 null）、messageDraft（string 或 null）。EMAIL 要求 subject 为 1–150 字符、messageDraft 为 1–1000 字符；SMS/WECHAT 要求 subject=null、messageDraft 为 1–500 字符；PHONE / IN_PERSON 要求 subject/messageDraft 均为 null，通过 talkingPoints 提供电话提纲。短信字数上限仅是草稿长度，不保证实际发送为一条短信。
-
-模型输入来自咨询、沟通历史和个人课堂反馈，每条附记录 ID；限制条数与长度，优先近期记录。Zod 严格模式拒绝额外字段，并按请求渠道验证条件；evidence.recordId 必须来自本次授权输入，无证据则要求 INSUFFICIENT。服务端验证能排除伪造 ID，但不能证明结论正确，Admin 必须审核。模型不生成百分比成交概率、不自动改意向状态；记录模型、生成时间和输入记录 ID 以供追溯。服务端为响应附加受信的 channel、language 和 `source: llm`；失败返回 intentSignal=INSUFFICIENT、evidence=[] 的同渠道同语言模板及 `source: template`。页面按渠道展示邮件主题、短文案或电话提纲，清楚标记来源，不伪装模型成功。
-
-只选必要输入字段，移除联系人字段，并过滤自由文本中已知姓名、联系方式等个人信息。用户文本是不可信业务材料，不能改变输出规则；模型不配置写工具。结构合格也不能保证事实正确，顾问须审核；拒绝模型主动补充价格承诺、报名状态等事实。
-
-模型请求在数据库事务外，设 10 秒超时；无密钥、限流、超时、内容为空或校验失败，均不影响人工跟进。生成入口复用负责人权限，并限制输入长度和调用频率。验收必须分别覆盖真实 provider 调用和失败降级，只有模板不能算完成 LLM 要求。
-
-## 5. 验收与交付检查
-
-| 场景 | 预期 |
-| --- | --- |
-| 顾问 A 读取 B 的详细记录、修改 B 学生、为其生成草稿 | 服务端拒绝，无敏感字段泄漏 |
-| 老师访问其他老师的名单或提交结果 | 服务端拒绝 |
-| 两个重叠试听并发提交给同一学生 | 最多一个成功 |
-| 两名学生抢最后一席 | 恰好一个成功，另一请求 409 |
-| 正式课程冲突、已入该课次、已取消课次 | 预约失败 |
-| 过期但未填结果，再约同课程 | 拒绝并提示先补录 |
-| 取消未来试听、取消已开始试听 | 前者释放席位并创建待办，后者拒绝 |
-| 重复结果、不同结果、重复沟通、旧 version | 无重复待办或 Note，不覆盖已有结果或新版本 |
-| 无到课反馈、非法状态跳转、伪造负责人 | 直接 API 调用也不能绕过 |
-| 无任何联系方式、EMAIL 偏好却无邮箱、使用其他学生联系人跟进 | 服务端拒绝；允许只有邮箱或只有有效电话的合法联系人 |
-| 同一家长关联多个学生、不同渠道及中英文草稿、保存但未联系 | 关联正确、结构匹配；保存草稿不改变待办 |
-| 千问正常、超时、无密钥、结构不合格 | 正常结构可编辑，其余清楚降级且能完成跟进 |
-| 墨尔本午夜、夏令时切换、相邻课次 | 日期归属正确，相邻不冲突，歧义不静默转换 |
-
-数据库相关测试使用真实 PostgreSQL；前端验证加载、空、错误、重试和表单内容保留。新增技术能力不能挤占核心破坏测试。
-
-交付前检查 README 的 Compose 启动、迁移、seed、账号、测试说明、部署链接（若有）、AI 使用记录；保留完整 Git 历史，不 squash。按原题正式开始时初始化并创建 public 仓库、邮件发送链接，十小时内结束提交，面试前至少一小时交付。本文仅记录要求，不代表仓库创建、部署或邮件已经完成。
-
-DESIGN.md 的正文已经压缩，但 Markdown 没有固定纸张尺寸；最终提交如按打印页数审阅，应按统一 A4 字体、边距导出检查正文不超过三页，草图不计。本文件保留实现细节，不应被用来替代正文要求的七项设计内容。
-
-## 6. 后续课时包与订单（本次不实现）
-
-LessonPackage 保存课程、名称、课时单位数、priceMinor、currency=AUD；金额使用澳分整数。PurchaseOrder 关联付款 Contact、受益 Student 和课时包，保存购买时名称、课程、单位数、成交金额及币种快照，避免商品变更影响旧订单。一笔订单本阶段只对应一个学生的一种课时包。
-
-Admin 核实线下收款后，在事务中将订单从 PENDING 转为 PAID、记录确认人和时间，并写入具有订单唯一发放键的 CreditEntry；重复确认不能重复发放。不因试听跟进“有意报名”自动生成已支付订单。正式入班与付款是独立事件，不能混用一个报名状态掩盖差异。
-
-“100 单位，AUD X”只是商品结构示例，不是价格承诺；标准课暂按 1 单位扣除，不假设一单位等于一小时。有效期未确认前不自动使权益过期，暂不支持跨课程、跨孩子共享。退款关联原订单和原发放记录，退现金与调整剩余权益分别追踪；具体退款金额、税务和财务对账待业务明确。
+无需系统管理、家长管理、独立试听管理页。README区分原版已实现与本轮待开发；OpenAPI、迁移、服务和页面必须一起替换旧规则。详见plan/01、02、10及联动任务，旧PDF/验收报告不能作为新版完成证据。

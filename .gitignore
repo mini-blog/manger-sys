@@ -9,3 +9,5 @@ coverage/
 apps/api/src/generated/
 *.tsbuildinfo
 *.log
+
+tmp/
