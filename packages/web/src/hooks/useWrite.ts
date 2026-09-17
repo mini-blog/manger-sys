@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { paths } from '@student/common/api';
 import { apiError } from '../api/client';
 import { useAuth } from '../auth';
+import { createRequestKey } from '../lib/request-key';
 type Method = 'post' | 'patch';
 type WritePath<M extends Method> = {
   [P in keyof paths]: paths[P][M] extends { requestBody: unknown } ? P : never;
@@ -36,7 +37,7 @@ export function useWrite<M extends Method, P extends WritePath<M>>(
       );
       const payload = JSON.stringify({ url, body });
       if (attempt.current?.payload !== payload)
-        attempt.current = { payload, key: crypto.randomUUID() };
+        attempt.current = { payload, key: createRequestKey() };
       const response = await fetch(url, {
         method: method.toUpperCase(),
         credentials: 'include',

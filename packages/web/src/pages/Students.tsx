@@ -37,13 +37,14 @@ import { api, apiError } from '../api/client';
 import { useAuth } from '../auth';
 import { useMembershipRefresh } from '../hooks/useMembershipRefresh';
 import { membershipTabs } from '../lib/membership';
+import { createRequestKey } from '../lib/request-key';
 import type { components } from '@student/common/api';
 
 export function Students() {
   const { auth, refresh } = useAuth();
   const client = useQueryClient();
   const navigate = useNavigate();
-  const attempt = useRef({ body: '', key: crypto.randomUUID() });
+  const attempt = useRef<{ body: string; key: string } | null>(null);
   const admin = auth?.user.role === 'ADMIN';
   const [params, setParams] = useSearchParams();
   const category = MEMBERSHIP_CATEGORIES.includes(params.get('category') as MembershipCategory)
@@ -107,8 +108,8 @@ export function Students() {
         age: age === '' ? undefined : Number(age),
         gender,
       });
-      if (attempt.current.body !== payload)
-        attempt.current = { body: payload, key: crypto.randomUUID() };
+      if (attempt.current?.body !== payload)
+        attempt.current = { body: payload, key: createRequestKey() };
       const { data, error, response } = await api.POST('/api/students', {
         body: {
           ...guardianPayload(guardian),

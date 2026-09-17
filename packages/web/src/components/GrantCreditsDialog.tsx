@@ -18,6 +18,7 @@ import {
 import type { components, paths } from '@student/common/api';
 import { api, apiError } from '../api/client';
 import { useAuth } from '../auth';
+import { createRequestKey } from '../lib/request-key';
 
 type GrantBody =
   paths['/api/entitlements/grants']['post']['requestBody']['content']['application/json'];
@@ -91,7 +92,7 @@ export function GrantCreditsDialog({
     mutationFn: async (body: GrantBody) => {
       const payload = JSON.stringify(body);
       if (attempt.current?.body !== payload)
-        attempt.current = { body: payload, key: crypto.randomUUID() };
+        attempt.current = { body: payload, key: createRequestKey() };
       const { data, error, response } = await api.POST('/api/entitlements/grants', {
         body,
         params: { header: { 'idempotency-key': attempt.current.key } },
