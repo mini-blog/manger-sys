@@ -7,4 +7,7 @@ node_modules
 .env.*
 !.env.example
 .DS_Store
-**/src/generated
+packages/api/src/generated
+
+tmp
+output

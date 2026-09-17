@@ -1,0 +1,291 @@
+generator client {
+  provider = "prisma-client"
+  output = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  TEACHER
+}
+
+enum ParticipantKind {
+  REGULAR
+  TRIAL
+}
+
+enum SessionStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+enum BookingStatus {
+  BOOKED
+  CANCELLED
+}
+enum Attendance {
+  PENDING
+  ATTENDED
+  NO_SHOW
+}
+enum TaskType {
+  LESSON_FEEDBACK
+  TRIAL_FOLLOWUP
+}
+enum TaskStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+enum EntitlementBucket {
+  TRIAL
+  REGULAR
+}
+enum EntitlementKind {
+  INITIAL_TRIAL
+  TRIAL_GRANT
+  PURCHASE
+  CONSUMPTION
+  MIGRATION
+}
+
+enum MembershipCategory {
+  TRIAL_STUDENT
+  NEW_MEMBER
+  MEMBER
+}
+enum TaskPurpose {
+  FIRST_PURCHASE
+  MEMBER_CARE
+  REBOOKING
+}
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  name         String
+  role         Role
+  passwordHash String
+  sessions     AuthSession[]
+  students     Student[]
+  lessons      ClassSession[]
+  tasks        Task[]
+  communications CommunicationLog[]
+  changes ScheduleChange[]
+  receipts MutationReceipt[]
+  entitlementEntries EntitlementEntry[]
+}
+
+model AuthSession {
+  tokenHash String @id
+  csrfToken String
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime @db.Timestamptz(3)
+  @@index([expiresAt])
+}
+
+model Student {
+  id           String @id @default(cuid())
+  name         String
+  yearLevel    String
+  ownerAdminId String
+  owner        User @relation(fields: [ownerAdminId], references: [id])
+  participants SessionParticipant[]
+  guardianName String?
+  guardianRelationship String?
+  guardianPhone String?
+  guardianEmail String?
+  guardianWechat String?
+  preferredChannel String?
+  preferredLanguage String @default("en-AU")
+  learningGoals String?
+  preferredTimes String?
+  interestedSubjects String?
+  firstEnrolledOn DateTime? @db.Date
+  firstPurchasedAt DateTime? @db.Timestamptz(3)
+  entitlementEntries EntitlementEntry[]
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  communications CommunicationLog[]
+  changes ScheduleChange[]
+  @@index([ownerAdminId])
+}
+
+model Course {
+  id       String @id @default(cuid())
+  name     String @unique
+  sessions ClassSession[]
+}
+
+model ClassGroup {
+  id          String @id @default(cuid())
+  name        String
+  targetLevel String
+  sessions    ClassSession[]
+}
+
+model ClassSession {
+  id           String @id @default(cuid())
+  classGroupId String
+  classGroup   ClassGroup @relation(fields: [classGroupId], references: [id])
+  courseId     String
+  course       Course @relation(fields: [courseId], references: [id])
+  teacherId    String
+  teacher      User @relation(fields: [teacherId], references: [id])
+  startsAt     DateTime @db.Timestamptz(3)
+  endsAt       DateTime @db.Timestamptz(3)
+  capacity     Int
+  status       SessionStatus @default(SCHEDULED)
+  participants SessionParticipant[]
+  version Int @default(1)
+  summary String?
+  feedbackSubmittedAt DateTime? @db.Timestamptz(3)
+  feedbackPayloadHash String?
+  tasks Task[]
+  changes ScheduleChange[] @relation("SourceSession")
+  targetChanges ScheduleChange[] @relation("TargetSession")
+  @@index([startsAt])
+  @@index([teacherId, startsAt])
+  @@index([classGroupId, startsAt])
+}
+
+model SessionParticipant {
+  id           String @id @default(cuid())
+  sessionId    String
+  session      ClassSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId    String
+  student      Student @relation(fields: [studentId], references: [id])
+  kind         ParticipantKind @default(REGULAR)
+  isNewToClass Boolean @default(false)
+  bookingStatus BookingStatus @default(BOOKED)
+  attendance Attendance @default(PENDING)
+  feedback String?
+  abilityNote String?
+  preferenceNote String?
+  categorySnapshot String?
+  membershipCategorySnapshot MembershipCategory?
+  rebookedTasks Task[] @relation("RebookingTarget")
+  consumption EntitlementEntry?
+  version Int @default(1)
+  tasks Task[]
+  communications CommunicationLog[]
+  changes ScheduleChange[]
+  @@unique([sessionId, studentId])
+}
+
+model Task {
+  id String @id @default(cuid())
+  type TaskType
+  assigneeId String
+  assignee User @relation(fields:[assigneeId], references:[id])
+  sessionId String
+  session ClassSession @relation(fields:[sessionId], references:[id])
+  participantId String?
+  participant SessionParticipant? @relation(fields:[participantId], references:[id])
+  status TaskStatus @default(OPEN)
+  purpose TaskPurpose?
+  resolvedByEntitlementEntryId String?
+  resolvedByEntitlementEntry EntitlementEntry? @relation(fields: [resolvedByEntitlementEntryId], references: [id], onDelete: Restrict)
+  rebookedToParticipantId String?
+  rebookedToParticipant SessionParticipant? @relation("RebookingTarget", fields: [rebookedToParticipantId], references: [id], onDelete: Restrict)
+  reason String?
+  sourceSnapshot Json?
+  availableAt DateTime @db.Timestamptz(3)
+  dueAt DateTime @db.Timestamptz(3)
+  version Int @default(1)
+  completedAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  communications CommunicationLog[]
+  @@index([assigneeId,status,availableAt,dueAt])
+}
+model CommunicationLog {
+  id String @id @default(cuid())
+  studentId String
+  student Student @relation(fields:[studentId], references:[id])
+  taskId String?
+  task Task? @relation(fields:[taskId], references:[id])
+  participantId String?
+  participant SessionParticipant? @relation(fields:[participantId], references:[id])
+  guardianNameSnapshot String
+  relationshipSnapshot String?
+  channel String
+  content String
+  outcome String?
+  occurredAt DateTime @db.Timestamptz(3)
+  createdBy String
+  author User @relation(fields:[createdBy], references:[id])
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([studentId,occurredAt])
+}
+model ScheduleChange {
+  id String @id @default(cuid())
+  sessionId String
+  session ClassSession @relation("SourceSession",fields:[sessionId], references:[id])
+  targetSessionId String?
+  targetSession ClassSession? @relation("TargetSession",fields:[targetSessionId], references:[id])
+  studentId String?
+  student Student? @relation(fields:[studentId], references:[id])
+  participantId String?
+  participant SessionParticipant? @relation(fields:[participantId], references:[id])
+  actorId String
+  actor User @relation(fields:[actorId], references:[id])
+  action String
+  reason String
+  before Json
+  after Json
+  requestKey String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([sessionId,createdAt])
+}
+model MutationReceipt {
+  id String @id @default(cuid())
+  userId String
+  user User @relation(fields:[userId], references:[id])
+  operation String
+  key String
+  requestHash String
+  response Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([userId,operation,key])
+}
+
+model EntitlementEntry {
+  id String @id @default(cuid())
+  studentId String
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  bucket EntitlementBucket
+  kind EntitlementKind
+  quantity Int
+  participantId String? @unique
+  participant SessionParticipant? @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  actorId String?
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  note String?
+  packageId String?
+  package LessonPackage? @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  packageSnapshot Json?
+  resolvedTasks Task[]
+  sourceKey String @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([studentId, bucket, createdAt, id])
+}
+
+model LessonPackage {
+  id String @id @default(cuid())
+  name String
+  quantity Int
+  priceAudCents Int
+  active Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  entries EntitlementEntry[]
+  @@index([active, name, id])
+}

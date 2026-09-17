@@ -1,0 +1,117 @@
+name: studentsys
+
+x-api-environment: &api-environment
+  NODE_ENV: development
+  DATABASE_URL: postgresql://${POSTGRES_USER:-student}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-student_sys}
+  API_HOST: 0.0.0.0
+  API_PORT: 3000
+  SESSION_COOKIE_SECURE: 'false'
+  SEED_PASSWORD: ${SEED_PASSWORD:-}
+  QWEN_API_KEY: ${QWEN_API_KEY:-}
+  QWEN_BASE_URL: ${QWEN_BASE_URL:-}
+  QWEN_MODEL: ${QWEN_MODEL:-}
+  TSC_WATCHFILE: DynamicPriorityPolling
+  TSC_WATCHDIRECTORY: RecursiveDirectoryUsingDynamicPriorityPolling
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-student}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-student_sys}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  migrate:
+    image: studentsys-api-dev:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+      target: development
+    environment: *api-environment
+    command: ['pnpm', '--filter', '@student/api', 'db:migrate']
+    volumes:
+      - ./packages/api/prisma:/app/packages/api/prisma:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+  api:
+    image: studentsys-api-dev:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+      target: development
+    init: true
+    environment: *api-environment
+    ports:
+      - '127.0.0.1:${API_PORT:-3100}:3000'
+    volumes:
+      - ./packages/api/src:/app/packages/api/src
+      - ./packages/api/prisma:/app/packages/api/prisma:ro
+      - ./packages/common/src:/app/packages/common/src
+      # Prisma generation stays in a container volume, not the host source tree.
+      - api_generated:/app/packages/api/src/generated
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 20
+  web:
+    image: studentsys-web-dev:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+      target: development
+    init: true
+    environment:
+      NODE_ENV: development
+      API_PROXY_TARGET: http://api:3000
+      CHOKIDAR_USEPOLLING: 'true'
+      TSC_WATCHFILE: DynamicPriorityPolling
+      TSC_WATCHDIRECTORY: RecursiveDirectoryUsingDynamicPriorityPolling
+    ports:
+      - '127.0.0.1:${DEV_WEB_PORT:-5173}:5173'
+    volumes:
+      - ./packages/web/src:/app/packages/web/src
+      - ./packages/web/index.html:/app/packages/web/index.html:ro
+      - ./packages/web/vite.config.ts:/app/packages/web/vite.config.ts:ro
+      - ./packages/common/src:/app/packages/common/src
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:5173/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      start_period: 15s
+      retries: 15
+volumes:
+  postgres_data:
+  api_generated:

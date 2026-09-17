@@ -1,0 +1,95 @@
+name: studentsys-prod
+
+x-database-environment: &database-environment
+  NODE_ENV: production
+  DATABASE_URL: postgresql://${POSTGRES_USER:-student}:${POSTGRES_PASSWORD:?Set a production database password}@db:5432/${POSTGRES_DB:-student_sys}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-student}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a production database password}
+      POSTGRES_DB: ${POSTGRES_DB:-student_sys}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [database]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  migrate:
+    image: studentsys-migrate:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+      target: migrate
+    environment: *database-environment
+    networks: [database]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+  api:
+    image: studentsys-api:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+      target: api
+    init: true
+    restart: unless-stopped
+    environment:
+      <<: *database-environment
+      API_HOST: 0.0.0.0
+      API_PORT: 3000
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-}
+      QWEN_MODEL: ${QWEN_MODEL:-}
+    expose: ['3000']
+    # database is isolated; application permits outbound calls to Qwen.
+    networks: [application, database]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      start_period: 15s
+      retries: 10
+  web:
+    # This image contains the built frontend and Nginx; the only public entry.
+    image: studentsys-web:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+      target: production
+    restart: unless-stopped
+    ports:
+      - '${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-8080}:80'
+    networks: [application]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/healthz']
+      interval: 10s
+      timeout: 3s
+      retries: 10
+networks:
+  application:
+  database:
+    internal: true
+volumes:
+  postgres_data:

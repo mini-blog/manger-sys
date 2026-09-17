@@ -1341,6 +1341,284 @@
           "Workflow"
         ]
       }
+    },
+    "/api/lesson-packages": {
+      "get": {
+        "operationId": "EntitlementsController_packages",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonPackagePageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Entitlements"
+        ]
+      }
+    },
+    "/api/entitlements/grants": {
+      "post": {
+        "operationId": "EntitlementsController_grant",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained for retries of identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/TrialGrantDto"
+                  },
+                  {
+                    "$ref": "#/components/schemas/CustomPurchaseDto"
+                  },
+                  {
+                    "$ref": "#/components/schemas/PackagePurchaseDto"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantResultDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Entitlements"
+        ]
+      }
+    },
+    "/api/entitlements": {
+      "get": {
+        "operationId": "EntitlementsController_list",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "studentId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Entitlements"
+        ]
+      }
+    },
+    "/api/students/{id}/entitlements": {
+      "get": {
+        "operationId": "EntitlementsController_summary",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntitlementSummaryDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Entitlements"
+        ]
+      }
+    },
+    "/api/students/{id}/entitlement-entries": {
+      "get": {
+        "operationId": "EntitlementsController_ledger",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "pageSize",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bucket",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TRIAL",
+                "REGULAR"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerPageDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Entitlements"
+        ]
+      }
     }
   },
   "info": {
@@ -1539,10 +1817,6 @@
           "interestedSubjects": {
             "type": "string"
           },
-          "firstEnrolledOn": {
-            "type": "string",
-            "example": "2026-09-17"
-          },
           "name": {
             "type": "string"
           },
@@ -1564,6 +1838,10 @@
               "Year 12",
               "Not assessed"
             ]
+          },
+          "giftTrialCredit": {
+            "type": "boolean",
+            "default": true
           }
         },
         "required": [
@@ -1788,10 +2066,6 @@
           },
           "interestedSubjects": {
             "type": "string"
-          },
-          "firstEnrolledOn": {
-            "type": "string",
-            "example": "2026-09-17"
           },
           "name": {
             "type": "string"
@@ -2724,6 +2998,458 @@
           "generatedAt",
           "inputRecordIds",
           "evidence"
+        ]
+      },
+      "TrialGrantDto": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "TRIAL"
+            ]
+          },
+          "quantity": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "studentId",
+          "bucket",
+          "quantity"
+        ]
+      },
+      "CustomPurchaseDto": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "REGULAR"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "CUSTOM"
+            ]
+          },
+          "quantity": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10000
+          }
+        },
+        "required": [
+          "studentId",
+          "bucket",
+          "mode",
+          "quantity"
+        ]
+      },
+      "PackagePurchaseDto": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "REGULAR"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "PACKAGE"
+            ]
+          },
+          "packageId": {
+            "type": "string"
+          },
+          "expectedPackageVersion": {
+            "type": "number",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "studentId",
+          "bucket",
+          "mode",
+          "packageId",
+          "expectedPackageVersion"
+        ]
+      },
+      "LessonPackageDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "priceAudCents": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "AUD"
+            ]
+          },
+          "version": {
+            "type": "number"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "quantity",
+          "priceAudCents",
+          "currency",
+          "version",
+          "id"
+        ]
+      },
+      "LessonPackagePageDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonPackageDto"
+            }
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "pageSize",
+          "items"
+        ]
+      },
+      "ActorSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "PackageSnapshotDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "priceAudCents": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "AUD"
+            ]
+          },
+          "version": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "quantity",
+          "priceAudCents",
+          "currency",
+          "version"
+        ]
+      },
+      "EntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "studentId": {
+            "type": "string"
+          },
+          "bucket": {
+            "type": "string",
+            "enum": [
+              "TRIAL",
+              "REGULAR"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "INITIAL_TRIAL",
+              "TRIAL_GRANT",
+              "PURCHASE",
+              "CONSUMPTION",
+              "MIGRATION"
+            ]
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          },
+          "participantId": {
+            "type": "string",
+            "nullable": true
+          },
+          "sessionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "actor": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ActorSummaryDto"
+              }
+            ]
+          },
+          "packageId": {
+            "type": "string",
+            "nullable": true
+          },
+          "packageSnapshot": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PackageSnapshotDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "studentId",
+          "bucket",
+          "kind",
+          "quantity",
+          "createdAt",
+          "note",
+          "participantId",
+          "sessionId",
+          "actor",
+          "packageId",
+          "packageSnapshot"
+        ]
+      },
+      "PoolBalanceDto": {
+        "type": "object",
+        "properties": {
+          "remaining": {
+            "type": "number"
+          },
+          "reserved": {
+            "type": "number"
+          },
+          "available": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "remaining",
+          "reserved",
+          "available"
+        ]
+      },
+      "BalancesDto": {
+        "type": "object",
+        "properties": {
+          "TRIAL": {
+            "$ref": "#/components/schemas/PoolBalanceDto"
+          },
+          "REGULAR": {
+            "$ref": "#/components/schemas/PoolBalanceDto"
+          }
+        },
+        "required": [
+          "TRIAL",
+          "REGULAR"
+        ]
+      },
+      "GrantResultDto": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "$ref": "#/components/schemas/EntryDto"
+          },
+          "balances": {
+            "$ref": "#/components/schemas/BalancesDto"
+          },
+          "membershipCategory": {
+            "type": "string",
+            "enum": [
+              "TRIAL_STUDENT",
+              "NEW_MEMBER",
+              "MEMBER"
+            ]
+          },
+          "firstPurchasedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "closedTaskIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "entry",
+          "balances",
+          "membershipCategory",
+          "firstPurchasedAt",
+          "closedTaskIds"
+        ]
+      },
+      "EntitlementSummaryDto": {
+        "type": "object",
+        "properties": {
+          "studentId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yearLevel": {
+            "type": "string"
+          },
+          "balances": {
+            "$ref": "#/components/schemas/BalancesDto"
+          },
+          "membershipCategory": {
+            "type": "string",
+            "enum": [
+              "TRIAL_STUDENT",
+              "NEW_MEMBER",
+              "MEMBER"
+            ]
+          },
+          "firstPurchasedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "membershipAsOfDate": {
+            "type": "string"
+          },
+          "nextCategoryChangeAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "studentId",
+          "name",
+          "yearLevel",
+          "balances",
+          "membershipCategory",
+          "firstPurchasedAt",
+          "membershipAsOfDate",
+          "nextCategoryChangeAt"
+        ]
+      },
+      "EntitlementPageDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntitlementSummaryDto"
+            }
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "pageSize",
+          "items"
+        ]
+      },
+      "LedgerPageDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntryDto"
+            }
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "pageSize",
+          "items"
         ]
       }
     }

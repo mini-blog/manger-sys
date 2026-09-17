@@ -4,9 +4,11 @@ dist-dev/
 .env
 .env.*
 !.env.example
+!.env.prod.example
+AGENTS.md
 .DS_Store
 coverage/
-apps/api/src/generated/
+packages/api/src/generated/
 *.tsbuildinfo
 *.log
 

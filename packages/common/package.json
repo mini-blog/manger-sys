@@ -1,0 +1,38 @@
+{
+  "name": "@student/common",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./api": {
+      "types": "./src/generated/api.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "src/generated/api.d.ts"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.esm.json && node scripts/esm-package.mjs",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "concurrently -k \"tsc -p tsconfig.json --watch --preserveWatchOutput\" \"tsc -p tsconfig.esm.json --watch --preserveWatchOutput\"",
+    "api:generate": "openapi-typescript ../../openapi.json -o src/generated/api.d.ts"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "openapi-typescript": "^7.10.1"
+  }
+}

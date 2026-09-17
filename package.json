@@ -2,32 +2,27 @@
   "name": "student-sys",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/api",
-    "apps/web"
-  ],
   "engines": {
-    "node": ">=22.12 <23"
+    "node": ">=22.12 <23",
+    "pnpm": ">=10.13.1 <11"
   },
   "scripts": {
-    "dev": "concurrently -k -n api,web \"npm run dev -w @student/api\" \"npm run dev -w @student/web\"",
-    "build": "npm run build -w @student/api && npm run build -w @student/web",
-    "check": "npm run check -w @student/api && npm run check -w @student/web",
-    "test": "npm run test -w @student/api",
-    "db:generate": "npm run db:generate -w @student/api",
-    "db:migrate": "npm run db:migrate -w @student/api",
-    "db:seed": "npm run db:seed -w @student/api",
-    "openapi:generate": "npm run build -w @student/api && npm run openapi:export -w @student/api && npm run api:generate -w @student/web",
-    "format": "prettier --write \"apps/**/src/**/*.{ts,tsx}\" \"apps/**/test/*.{ts,mjs}\" \"apps/**/prisma/seed.ts\" \"*.json\" \"*.yaml\"",
-    "test:integration": "npm run build -w @student/api && node apps/api/test/integration.mjs && node apps/api/test/workflow.mjs",
-    "test:qwen": "npm run build -w @student/api && node apps/api/test/qwen-smoke.mjs"
+    "dev": "pnpm --filter @student/common build && pnpm --filter @student/api build:dev && concurrently -k -n common,api,web \"pnpm --filter @student/common dev\" \"pnpm --filter @student/api dev\" \"pnpm --filter @student/web dev\"",
+    "build": "pnpm -r build",
+    "check": "pnpm --filter @student/common build && pnpm db:generate && pnpm -r check",
+    "test": "pnpm --filter @student/common build && pnpm db:generate && pnpm --filter @student/api test",
+    "db:generate": "pnpm --filter @student/api db:generate",
+    "db:migrate": "pnpm --filter @student/api db:migrate",
+    "db:seed": "pnpm --filter @student/api db:seed",
+    "openapi:generate": "pnpm --filter @student/api... build && pnpm --filter @student/api openapi:export && pnpm --filter @student/common api:generate && pnpm --filter @student/common build",
+    "format": "prettier --write \"packages/**/src/**/*.{ts,tsx}\" \"packages/**/test/*.{ts,mjs}\" \"packages/**/prisma/seed.ts\" \"*.json\" \"*.yaml\"",
+    "test:integration": "pnpm --filter @student/api... build && node packages/api/test/integration.mjs && node packages/api/test/workflow.mjs",
+    "test:qwen": "pnpm --filter @student/api... build && node packages/api/test/qwen-smoke.mjs",
+    "test:entitlements": "node scripts/test-entitlements.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
     "prettier": "^3.6.2"
   },
-  "overrides": {
-    "deepmerge-ts": "8.0.2",
-    "mysql2": "3.24.4"
-  }
+  "packageManager": "pnpm@10.13.1"
 }
