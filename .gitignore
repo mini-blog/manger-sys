@@ -11,5 +11,8 @@ coverage/
 packages/api/src/generated/
 *.tsbuildinfo
 *.log
-
+.plan/
 tmp/
+
+# Local plans and supporting documents are not versioned.
+/docs/

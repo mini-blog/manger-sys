@@ -480,18 +480,39 @@ export interface components {
         LogoutDto: {
             ok: boolean;
         };
-        StudentDto: {
+        StudentAdminViewDto: {
+            id: string;
+            name: string;
+        };
+        StudentListItemDto: {
             id: string;
             name: string;
             yearLevel: string;
+            gender: string | null;
+            age: number | null;
+            responsibleAdmin?: components["schemas"]["StudentAdminViewDto"];
+            /** @enum {string} */
+            membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
+        };
+        CategoryCountsDto: {
+            TRIAL_STUDENT: number;
+            NEW_MEMBER: number;
+            MEMBER: number;
         };
         StudentPageDto: {
-            items: components["schemas"]["StudentDto"][];
+            items: components["schemas"]["StudentListItemDto"][];
+            categoryCounts: components["schemas"]["CategoryCountsDto"];
+            membershipAsOfDate: string;
+            nextCategoryChangeAt: string;
             total: number;
             page: number;
             pageSize: number;
         };
         CreateStudentDto: {
+            guardianOccupation?: string;
+            guardianAge?: number;
+            /** @enum {string} */
+            guardianGender?: "" | "FEMALE" | "MALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY";
             guardianName?: string;
             guardianRelationship?: string;
             guardianPhone?: string;
@@ -504,11 +525,19 @@ export interface components {
             learningGoals?: string;
             preferredTimes?: string;
             interestedSubjects?: string;
+            /** @enum {string} */
+            gender?: "" | "FEMALE" | "MALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY";
+            age?: number;
             name: string;
             /** @enum {string} */
             yearLevel: "Foundation" | "Year 1" | "Year 2" | "Year 3" | "Year 4" | "Year 5" | "Year 6" | "Year 7" | "Year 8" | "Year 9" | "Year 10" | "Year 11" | "Year 12" | "Not assessed";
             /** @default true */
             giftTrialCredit: boolean;
+        };
+        StudentDto: {
+            id: string;
+            name: string;
+            yearLevel: string;
         };
         LessonDto: {
             id: string;
@@ -540,6 +569,18 @@ export interface components {
             id: string;
             name: string;
             yearLevel: string;
+            gender: string | null;
+            age: number | null;
+            responsibleAdmin?: components["schemas"]["StudentAdminViewDto"];
+            /** @enum {string} */
+            membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
+            recordedByAdmin?: components["schemas"]["StudentAdminViewDto"] | null;
+            guardianOccupation?: string;
+            guardianAge?: number | null;
+            guardianGender?: string;
+            firstPurchasedAt?: string | null;
+            membershipAsOfDate: string;
+            nextCategoryChangeAt: string;
             canEdit: boolean;
             version: number;
             firstEnrolledOn: string | null;
@@ -556,6 +597,10 @@ export interface components {
             teachingRecords: components["schemas"]["TeachingRecordDto"][];
         };
         UpdateStudentDto: {
+            guardianOccupation?: string;
+            guardianAge?: number;
+            /** @enum {string} */
+            guardianGender?: "" | "FEMALE" | "MALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY";
             guardianName?: string;
             guardianRelationship?: string;
             guardianPhone?: string;
@@ -568,9 +613,14 @@ export interface components {
             learningGoals?: string;
             preferredTimes?: string;
             interestedSubjects?: string;
+            /** @enum {string} */
+            gender?: "" | "FEMALE" | "MALE" | "NON_BINARY" | "PREFER_NOT_TO_SAY";
+            age?: number;
             name?: string;
             /** @enum {string} */
             yearLevel?: "Foundation" | "Year 1" | "Year 2" | "Year 3" | "Year 4" | "Year 5" | "Year 6" | "Year 7" | "Year 8" | "Year 9" | "Year 10" | "Year 11" | "Year 12" | "Not assessed";
+            clearGuardianAge?: boolean;
+            clearAge?: boolean;
             expectedVersion: number;
         };
         ActionDto: {
@@ -664,6 +714,8 @@ export interface components {
             studentId: string;
             /** @enum {string} */
             kind: "TRIAL" | "REGULAR";
+            /** @description Optional open rebooking task for this student and subject; TRIAL only. */
+            sourceRebookingTaskId?: string;
         };
         VersionDto: {
             expectedVersion: number;
@@ -998,6 +1050,7 @@ export interface operations {
                 page?: number;
                 pageSize?: number;
                 q?: string;
+                category?: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
                 mine?: string;
             };
             header?: never;

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { readFile, readdir } from 'node:fs/promises';
 import pg from 'pg';
+import { verifyBookingCreate } from './booking-create.mjs';
 // Destructive test fixtures may only run in the disposable database created by the runner.
 assert.equal(process.env.ENTITLEMENT_TEST_ISOLATED, 'true', 'Run pnpm test:entitlements.');
 assert.equal(new URL(process.env.DATABASE_URL).pathname, '/entitlement_test');
@@ -40,8 +41,26 @@ try {
   const taskBefore = (await client.query('SELECT * FROM "Task"')).rows[0];
   for (const name of migrations.slice(2))
     await client.query(await readFile(new URL(`${name}/migration.sql`, root), 'utf8'));
-  const { firstPurchasedAt, ...after } = (await client.query('SELECT * FROM "Student"')).rows[0];
+  const {
+    firstPurchasedAt,
+    guardianOccupation,
+    guardianAge,
+    guardianGender,
+    gender,
+    age,
+    ...after
+  } = (await client.query('SELECT * FROM "Student"')).rows[0];
   assert.equal(firstPurchasedAt, null);
+  assert.equal(guardianAge, null);
+  assert.equal(age, null);
+  assert.equal(gender, null);
+  assert.equal(guardianGender, null);
+  assert.equal(guardianOccupation, null);
+  const legacyLink = (
+    await client.query('SELECT * FROM "StudentAdminLink" WHERE "studentId" = $1', ['legacy-s'])
+  ).rows[0];
+  assert.equal(legacyLink.adminId, 'legacy-a');
+  assert.equal(legacyLink.createdByAdminId, null);
   assert.deepEqual(after, before);
   const { purpose, resolvedByEntitlementEntryId, rebookedToParticipantId, ...taskAfter } = (
     await client.query('SELECT * FROM "Task"')
@@ -208,6 +227,142 @@ try {
   assert.equal(await db.student.count({ where: { name: 'Rollback gift' } }), 0);
   assert.equal(await db.mutationReceipt.count({ where: { key: faultKey } }), 0);
   passed('student optional gift, strict write fields, concurrent replay and complete rollback');
+
+  const profile = await student(a, {
+    guardianName: 'Test Guardian',
+    guardianRelationship: 'Mother',
+    guardianOccupation: 'Engineer',
+    guardianAge: 38,
+    guardianGender: 'FEMALE',
+    guardianEmail: 'parent@example.test',
+    guardianPhone: '0412345678',
+    preferredChannel: 'EMAIL',
+  });
+  let detail = ok(await req(a, `/students/${profile.id}`), 200);
+  assert.equal(detail.guardianAge, 38);
+  assert.equal(detail.guardianOccupation, 'Engineer');
+  assert.equal(detail.guardianPhone, '+61412345678');
+  assert.equal(detail.responsibleAdmin.id, a.user.id);
+  assert.equal(detail.recordedByAdmin.id, a.user.id);
+  assert.equal(await db.studentAdminLink.count({ where: { studentId: retries[0].data.id } }), 1);
+  const otherView = ok(await req(b, `/students/${profile.id}`), 200);
+  for (const field of ['guardianAge', 'guardianGender', 'guardianOccupation', 'guardianEmail'])
+    assert.equal(field in otherView, false);
+  await participant(profile.id);
+  const teacherView = ok(await req(t, `/students/${profile.id}`), 200);
+  for (const field of [
+    'guardianAge',
+    'guardianGender',
+    'guardianOccupation',
+    'guardianPhone',
+    'responsibleAdmin',
+    'recordedByAdmin',
+  ])
+    assert.equal(field in teacherView, false);
+  for (const fields of [
+    { guardianAge: -1 },
+    { guardianAge: 121 },
+    { guardianAge: 3.5 },
+    { guardianAge: '38' },
+    { guardianGender: 'invalid' },
+    { guardianOccupation: 'x'.repeat(121) },
+    { guardianEmail: 'invalid' },
+    { guardianPhone: '123' },
+    { createdByAdminId: b.user.id },
+    { adminLink: { adminId: b.user.id } },
+  ])
+    assert.equal(
+      (await req(a, '/students', { name: 'Invalid profile', yearLevel: 'Year 4', ...fields }))
+        .status,
+      400,
+    );
+  assert.equal(
+    (
+      await req(
+        a,
+        `/students/${profile.id}`,
+        { expectedVersion: detail.version, guardianAge: 40, clearGuardianAge: true },
+        { method: 'PATCH' },
+      )
+    ).status,
+    400,
+  );
+  ok(
+    await req(
+      a,
+      `/students/${profile.id}`,
+      { expectedVersion: detail.version, clearGuardianAge: true, guardianOccupation: 'Teacher' },
+      { method: 'PATCH' },
+    ),
+    200,
+  );
+  detail = ok(await req(a, `/students/${profile.id}`), 200);
+  assert.equal(detail.guardianAge, null);
+  assert.equal(detail.guardianOccupation, 'Teacher');
+  await db.student.update({ where: { id: profile.id }, data: { ownerAdminId: b.user.id } });
+  const reassigned = await db.studentAdminLink.findUnique({ where: { studentId: profile.id } });
+  assert.equal(reassigned.adminId, b.user.id);
+  assert.equal(reassigned.createdByAdminId, a.user.id);
+  await assert.rejects(
+    db.studentAdminLink.update({
+      where: { studentId: profile.id },
+      data: { createdByAdminId: b.user.id },
+    }),
+  );
+  await assert.rejects(
+    db.studentAdminLink.update({ where: { studentId: profile.id }, data: { adminId: a.user.id } }),
+  );
+  await assert.rejects(db.studentAdminLink.delete({ where: { studentId: profile.id } }));
+  passed(
+    'guardian profile validation/privacy, authenticated recorder, migration backfill and consistent immutable admin link',
+  );
+
+  const demographic = await student(a, { name: 'Demographic student', gender: 'FEMALE', age: 10 });
+  const demographicPage = ok(await req(a, '/students?q=Demographic'), 200);
+  assert.equal(demographicPage.items[0].age, 10);
+  assert.equal(demographicPage.items[0].gender, 'FEMALE');
+  assert.equal(demographicPage.items[0].responsibleAdmin.id, a.user.id);
+  assert.equal('adminLink' in demographicPage.items[0], false);
+  for (const badFields of [
+    { age: -1 },
+    { age: 121 },
+    { age: 1.5 },
+    { age: '10' },
+    { gender: 'invalid' },
+  ])
+    assert.equal(
+      (await req(a, '/students', { name: 'Invalid age', yearLevel: 'Year 4', ...badFields }))
+        .status,
+      400,
+    );
+  assert.equal(
+    (
+      await req(
+        a,
+        `/students/${demographic.id}`,
+        { expectedVersion: 1, age: 11, clearAge: true },
+        { method: 'PATCH' },
+      )
+    ).status,
+    400,
+  );
+  await participant(demographic.id);
+  const teachingPage = ok(await req(t, '/students?q=Demographic'), 200);
+  assert.equal(teachingPage.items[0].age, 10);
+  assert.equal('responsibleAdmin' in teachingPage.items[0], false);
+  assert.equal(ok(await req(t, `/students/${demographic.id}`), 200).gender, 'FEMALE');
+  ok(
+    await req(
+      a,
+      `/students/${demographic.id}`,
+      { expectedVersion: 1, clearAge: true, gender: '' },
+      { method: 'PATCH' },
+    ),
+    200,
+  );
+  assert.equal(ok(await req(a, `/students/${demographic.id}`), 200).age, null);
+  assert.equal(ok(await req(a, '/students?q=Demographic'), 200).items[0].gender, '');
+  passed('student age/gender validation, list/detail readback and responsible-admin visibility');
 
   const trialBody = { studentId: s.id, bucket: 'TRIAL', quantity: 3 },
     grantKey = randomUUID();
@@ -559,6 +714,72 @@ try {
     3,
   );
   passed('zero-credit students, stable filtered ledger pagination and generated OpenAPI oneOf');
+  const classification = [];
+  for (const [name, firstPurchasedAt, ownerAdminId] of [
+    ['Tab A trial', null, a.user.id],
+    ['Tab B first day', new Date('2028-09-12T13:59:00Z'), a.user.id],
+    ['Tab C sixth day', new Date('2028-09-05T14:00:00Z'), a.user.id],
+    ['Tab D seventh day', new Date('2028-09-05T13:59:59Z'), a.user.id],
+    ['Tab E other admin', new Date('2028-09-01T00:00:00Z'), b.user.id],
+  ])
+    classification.push(
+      await db.student.create({
+        data: {
+          name,
+          firstPurchasedAt,
+          ownerAdminId,
+          yearLevel: 'Year 4',
+          guardianEmail: 'private@example.test',
+        },
+      }),
+    );
+  const allTabs = ok(await req(a, '/students?q=Tab%20&pageSize=2'), 200);
+  assert.deepEqual(allTabs.categoryCounts, { TRIAL_STUDENT: 1, NEW_MEMBER: 2, MEMBER: 2 });
+  assert.equal(allTabs.total, 5);
+  assert.equal(allTabs.items.length, 2);
+  assert.equal(allTabs.membershipAsOfDate, '2028-09-12');
+  assert.equal(allTabs.nextCategoryChangeAt, '2028-09-12T14:00:00.000Z');
+  const newTab = ok(await req(a, '/students?q=Tab%20&category=NEW_MEMBER&pageSize=1&page=2'), 200);
+  assert.equal(newTab.total, 2);
+  assert.equal(newTab.items[0].id, classification[2].id);
+  assert.deepEqual(newTab.categoryCounts, allTabs.categoryCounts);
+  const mineTab = ok(await req(a, '/students?q=Tab%20&mine=true'), 200);
+  assert.deepEqual(mineTab.categoryCounts, { TRIAL_STUDENT: 1, NEW_MEMBER: 2, MEMBER: 1 });
+  assert.equal(
+    mineTab.items.some((s) => s.id === classification[4].id),
+    false,
+  );
+  assert.equal((await req(a, '/students?category=UNKNOWN')).status, 400);
+  await participant(classification[1].id, { attendance: 'ATTENDED' });
+  const teacherTab = ok(await req(t, '/students?q=Tab%20&category=NEW_MEMBER'), 200);
+  assert.deepEqual(teacherTab.categoryCounts, { TRIAL_STUDENT: 0, NEW_MEMBER: 1, MEMBER: 0 });
+  assert.equal(
+    teacherTab.items.some((s) => 'firstPurchasedAt' in s || 'guardianEmail' in s),
+    false,
+  );
+  for (const reader of [t, b]) {
+    const detail = ok(await req(reader, `/students/${classification[1].id}`), 200);
+    assert.equal(detail.membershipCategory, 'NEW_MEMBER');
+    assert.equal('firstPurchasedAt' in detail, false);
+    assert.equal('guardianEmail' in detail, false);
+  }
+  assert.equal(
+    ok(await req(a, `/students/${classification[1].id}`), 200).firstPurchasedAt,
+    '2028-09-12T13:59:00.000Z',
+  );
+  // The classification clock is captured once for both counts and rows, even across midnight.
+  const fixedNow = now;
+  let reads = 0;
+  app.get(Clock).now = () =>
+    reads++ === 0 ? new Date('2028-09-12T13:59:59.999Z') : new Date('2028-09-12T14:00:00Z');
+  const midnight = ok(await req(a, '/students?q=Tab%20&category=NEW_MEMBER'), 200);
+  assert.equal(midnight.items.length, 2);
+  assert.equal(midnight.categoryCounts.NEW_MEMBER, 2);
+  assert.equal(midnight.membershipAsOfDate, '2028-09-12');
+  app.get(Clock).now = () => fixedNow;
+  passed(
+    'student category counts, calendar partition, pagination, mine filter, teacher privacy and midnight snapshot',
+  );
 
   async function sqlEntry(overrides = {}) {
     const e = {
@@ -649,12 +870,29 @@ try {
   passed(
     'direct SQL enforces quantity/pool, initial gift uniqueness, consumption uniqueness, package and history foreign keys',
   );
+  await verifyBookingCreate({
+    db,
+    req,
+    ok,
+    student,
+    a,
+    b,
+    t,
+    courseId,
+    otherCourseId,
+    groupId,
+    now: () => now,
+    write,
+    ensureFollowup,
+    passed,
+  });
   console.log(
     `Entitlement integration passed (${groups} groups; isolated PostgreSQL; no production migration or real Qwen call).`,
   );
 } finally {
   // Fixture deletion is limited to this test's users; the runner then removes its disposable container.
   await db.communicationLog.deleteMany({ where: { createdBy: { in: userIds } } });
+  await db.scheduleChange.deleteMany({ where: { actorId: { in: userIds } } });
   await db.task.deleteMany({ where: { assigneeId: { in: userIds } } });
   await db.entitlementEntry.deleteMany({ where: { student: { ownerAdminId: { in: userIds } } } });
   await db.sessionParticipant.deleteMany({ where: { student: { ownerAdminId: { in: userIds } } } });

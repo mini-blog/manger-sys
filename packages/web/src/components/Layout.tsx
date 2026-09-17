@@ -1,32 +1,125 @@
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   Alert,
   Avatar,
+  Badge,
   Box,
   Button,
   Divider,
-  Drawer,
-  IconButton,
+  Menu,
+  MenuItem,
   Stack,
   Typography,
 } from '@mui/material';
 import {
   SchoolOutlined,
+  AccountBalanceWalletOutlined,
   DashboardOutlined,
   CalendarMonthOutlined,
   PeopleOutline,
   Logout,
-  Menu,
+  NotificationsOutlined,
 } from '@mui/icons-material';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { api, apiError } from '../api/client';
 import { useAuth } from '../auth';
+import { local } from '../lib/time';
+
+function TaskNotifications() {
+  const { auth, refresh } = useAuth();
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const query = useQuery({
+    queryKey: ['tasks', auth?.user.id, 'header'],
+    refetchInterval: 30_000,
+    queryFn: async () => {
+      const { data, error, response } = await api.GET('/api/tasks', {
+        params: { query: { status: 'OPEN', page: 1, pageSize: 5 } },
+      });
+      if (response.status === 401) refresh(null);
+      if (!data) throw apiError(error);
+      return data;
+    },
+  });
+  return (
+    <>
+      <Button
+        color="inherit"
+        aria-label={
+          query.isError
+            ? 'My tasks, unavailable'
+            : query.data
+              ? `My tasks, ${query.data.total} open`
+              : 'My tasks, loading'
+        }
+        aria-haspopup="menu"
+        aria-controls={anchor ? 'header-tasks' : undefined}
+        aria-expanded={Boolean(anchor)}
+        onClick={(event) => setAnchor(event.currentTarget)}
+        startIcon={
+          <Badge
+            badgeContent={query.isError ? undefined : query.data?.total}
+            color="primary"
+            max={99}
+          >
+            <NotificationsOutlined fontSize="small" />
+          </Badge>
+        }
+        sx={{ gap: 1, mr: 1 }}
+      >
+        My tasks
+      </Button>
+      <Menu
+        id="header-tasks"
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={() => setAnchor(null)}
+        slotProps={{ paper: { sx: { width: 340, maxWidth: 'calc(100vw - 24px)' } } }}
+      >
+        {query.isPending && <MenuItem disabled>Loading tasks…</MenuItem>}
+        {query.isError && (
+          <MenuItem onClick={() => void query.refetch()}>Could not load tasks · Retry</MenuItem>
+        )}
+        {!query.isError && query.data?.total === 0 && <MenuItem disabled>No open tasks</MenuItem>}
+        {!query.isError &&
+          query.data?.items.map((task) => (
+            <MenuItem
+              key={task.id}
+              component={Link}
+              to={`/tasks/${task.id}`}
+              onClick={() => setAnchor(null)}
+              sx={{ whiteSpace: 'normal', py: 1.5 }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={600}>
+                  {task.studentName ?? task.className}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {task.courseName} ·{' '}
+                  {task.type === 'LESSON_FEEDBACK' ? 'Lesson feedback' : 'Follow-up'}
+                </Typography>
+                <Typography variant="caption" component="div" color="text.secondary">
+                  Due {local(task.dueAt).toFormat('d LLL, HH:mm')} · Melbourne
+                </Typography>
+              </Box>
+            </MenuItem>
+          ))}
+        <Divider />
+        <MenuItem component={Link} to="/" onClick={() => setAnchor(null)}>
+          View all tasks
+        </MenuItem>
+      </Menu>
+    </>
+  );
+}
 
 export function Layout() {
   const { auth, refresh } = useAuth();
   const location = useLocation();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const main = useRef<HTMLElement>(null);
+  useEffect(() => {
+    main.current?.scrollTo(0, 0);
+  }, [location.pathname]);
   const admin = auth?.user.role === 'ADMIN';
   const groups = [
     { label: 'Workspace', items: [{ path: '/', label: 'My tasks', icon: <DashboardOutlined /> }] },
@@ -41,19 +134,26 @@ export function Layout() {
       ],
     },
     {
-      label: admin ? 'Resources' : 'Students',
+      label: 'Resources',
       items: [
         { path: '/students', label: admin ? 'Students' : 'My students', icon: <PeopleOutline /> },
+        ...(admin
+          ? [
+              {
+                path: '/entitlements',
+                label: 'Lesson credits',
+                icon: <AccountBalanceWalletOutlined />,
+              },
+            ]
+          : []),
       ],
     },
   ];
-  const active = groups
-    .flatMap((g) => g.items)
-    .find((item) =>
-      item.path === '/'
-        ? location.pathname === '/' || location.pathname.startsWith('/tasks/')
-        : location.pathname.startsWith(item.path),
-    );
+  const isActive = (path: string) =>
+    path === '/'
+      ? location.pathname === '/' || location.pathname.startsWith('/tasks/')
+      : location.pathname.startsWith(path);
+  const active = groups.flatMap((g) => g.items).find((item) => isActive(item.path));
   const logout = useMutation({
     mutationFn: async () => {
       const { error, response } = await api.POST('/api/auth/logout', {
@@ -63,139 +163,114 @@ export function Layout() {
     },
     onSuccess: () => refresh(null),
   });
-  const navigation = (
-    <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 4 }}>
-        <Avatar variant="rounded" sx={{ bgcolor: 'primary.main' }}>
-          <SchoolOutlined />
-        </Avatar>
-        <Typography variant="h6" fontWeight={700}>
-          StudentSys
-        </Typography>
-      </Stack>
-      <Box component="nav" aria-label="Main navigation">
-        {groups.map((group) => (
-          <Box key={group.label} sx={{ mb: 2 }}>
-            <Typography variant="overline" color="text.secondary">
-              {group.label}
-            </Typography>
-            {group.items.map((item) => (
-              <Button
-                key={item.path}
-                component={Link}
-                to={item.path}
-                startIcon={item.icon}
-                aria-current={
-                  (
-                    item.path === '/'
-                      ? location.pathname === '/' || location.pathname.startsWith('/tasks/')
-                      : location.pathname.startsWith(item.path)
-                  )
-                    ? 'page'
-                    : undefined
-                }
-                onClick={() => setMobileOpen(false)}
-                fullWidth
-                sx={{
-                  justifyContent: 'flex-start',
-                  px: 2,
-                  py: 1.3,
-                  mb: 0.5,
-                  bgcolor: (
-                    item.path === '/'
-                      ? location.pathname === '/' || location.pathname.startsWith('/tasks/')
-                      : location.pathname.startsWith(item.path)
-                  )
-                    ? '#eaf1e9'
-                    : 'transparent',
-                  color: (
-                    item.path === '/'
-                      ? location.pathname === '/' || location.pathname.startsWith('/tasks/')
-                      : location.pathname.startsWith(item.path)
-                  )
-                    ? 'primary.main'
-                    : 'text.secondary',
-                }}
-              >
-                {item.label}
-              </Button>
-            ))}
-          </Box>
-        ))}
-      </Box>
-      <Box sx={{ mt: 'auto', pt: 4 }}>
-        <Divider sx={{ mb: 2 }} />
-        <Typography variant="body2" fontWeight={600}>
-          {auth?.user.name}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          {admin ? 'Admin' : 'Teacher'}
-        </Typography>
-        <Box>
-          <Button
-            startIcon={<Logout />}
-            size="small"
-            onClick={() => logout.mutate()}
-            disabled={logout.isPending}
-            sx={{ mt: 2 }}
-          >
-            Sign out
-          </Button>
-        </Box>
-        {logout.isError && <Alert severity="error">{logout.error.message}</Alert>}
-      </Box>
-    </Box>
-  );
   return (
-    <Box sx={{ display: 'flex', minHeight: '100dvh' }}>
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: '208px minmax(540px, 1fr)',
+        minWidth: 748,
+        height: '100dvh',
+      }}
+    >
       <Box
         component="aside"
         sx={{
-          display: { xs: 'none', md: 'block' },
-          width: 232,
-          flexShrink: 0,
-          bgcolor: '#fff',
-          borderRight: '1px solid #e3e8e1',
-          position: 'sticky',
-          top: 0,
-          height: '100dvh',
+          bgcolor: 'background.paper',
+          borderRight: '1px solid',
+          borderColor: 'divider',
           overflowY: 'auto',
         }}
       >
-        {navigation}
+        <Stack
+          direction="row"
+          alignItems="center"
+          spacing={1.5}
+          sx={{ height: 52, px: 2.5, borderBottom: '1px solid', borderColor: 'divider' }}
+        >
+          <SchoolOutlined color="primary" sx={{ fontSize: 25 }} />
+          <Typography fontWeight={700} sx={{ fontSize: 16 }}>
+            StudentSys
+          </Typography>
+        </Stack>
+        <Box component="nav" aria-label="Main navigation" sx={{ p: 1.5 }}>
+          {groups.map((group) => (
+            <Box key={group.label} sx={{ mb: 2 }}>
+              <Typography variant="overline" color="text.secondary" sx={{ px: 1.5 }}>
+                {group.label}
+              </Typography>
+              {group.items.map((item) => (
+                <Button
+                  key={item.path}
+                  component={Link}
+                  to={item.path}
+                  startIcon={item.icon}
+                  aria-current={isActive(item.path) ? 'page' : undefined}
+                  fullWidth
+                  sx={{
+                    justifyContent: 'flex-start',
+                    minHeight: 36,
+                    px: 1.5,
+                    mb: 0.5,
+                    bgcolor: isActive(item.path) ? '#eaf1e9' : 'transparent',
+                    color: isActive(item.path) ? 'primary.main' : 'text.secondary',
+                  }}
+                >
+                  {item.label}
+                </Button>
+              ))}
+            </Box>
+          ))}
+        </Box>
       </Box>
-      <Drawer
-        open={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        sx={{ display: { md: 'none' }, '& .MuiDrawer-paper': { width: 260 } }}
+      <Box
+        sx={{ display: 'grid', gridTemplateRows: '52px minmax(0, 1fr)', minWidth: 0, minHeight: 0 }}
       >
-        {navigation}
-      </Drawer>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
         <Box
           component="header"
           sx={{
-            px: { xs: 2, md: 4 },
-            py: 2,
-            bgcolor: '#fff',
-            borderBottom: '1px solid #e3e8e1',
-            display: { xs: 'flex', md: 'none' },
+            px: 3,
+            bgcolor: 'background.paper',
+            borderBottom: '1px solid',
+            borderColor: 'divider',
+            display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: 2,
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <IconButton
-              aria-label="Open menu"
-              onClick={() => setMobileOpen(true)}
-              sx={{ display: { md: 'none' } }}
+          <Typography variant="body2" color="text.secondary">
+            {active?.label}
+          </Typography>
+          <Stack direction="row" alignItems="center" spacing={2}>
+            <TaskNotifications />
+            <Divider orientation="vertical" flexItem />
+            <Avatar sx={{ width: 28, height: 28, fontSize: 13, bgcolor: 'primary.main' }}>
+              {auth?.user.name.slice(0, 1)}
+            </Avatar>
+            <Box>
+              <Typography variant="body2" fontWeight={600} sx={{ maxWidth: 160 }} noWrap>
+                {auth?.user.name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {admin ? 'Admin' : 'Teacher'}
+              </Typography>
+            </Box>
+            <Button
+              color="inherit"
+              startIcon={<Logout fontSize="small" />}
+              onClick={() => logout.mutate()}
+              disabled={logout.isPending}
             >
-              <Menu />
-            </IconButton>
-            <Typography variant="body2">{active?.label}</Typography>
+              Sign out
+            </Button>
           </Stack>
         </Box>
-        <Box component="main" sx={{ p: { xs: 2, md: 4 } }}>
+        <Box component="main" ref={main} sx={{ p: 3, overflow: 'auto', minHeight: 0 }}>
+          {logout.isError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {logout.error.message}
+            </Alert>
+          )}
           <Outlet />
         </Box>
       </Box>

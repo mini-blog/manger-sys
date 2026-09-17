@@ -40,6 +40,8 @@ export class StudentsService {
     const {
       expectedVersion: _,
       giftTrialCredit: _gift,
+      clearGuardianAge: _clearGuardianAge,
+      clearAge: _clearAge,
       ...fields
     } = body as D.UpdateStudentDto & D.CreateStudentDto;
     if ('name' in fields && (typeof fields.name !== 'string' || !fields.name.trim()))
@@ -70,6 +72,12 @@ export class StudentsService {
         const s = await tx.student.create({
           data: { ...data, name: body.name, yearLevel: body.yearLevel, ownerAdminId: user.id },
         });
+        // The DB creates the responsible-admin link for all insert paths; only an authenticated
+        // create command can truthfully identify who recorded this student.
+        await tx.studentAdminLink.update({
+          where: { studentId: s.id },
+          data: { createdByAdminId: user.id },
+        });
         if (body.giftTrialCredit !== false)
           await this.entitlements.initialTrialGrant(
             tx,
@@ -95,9 +103,21 @@ export class StudentsService {
         const s = await ownedStudent(tx, user, id);
         version(s.version, body.expectedVersion);
         const data = this.fields(body);
+        if (body.clearGuardianAge && body.guardianAge !== undefined)
+          bad('Do not set and clear guardian age in the same request.');
+        if (body.clearAge && body.age !== undefined)
+          bad('Do not set and clear student age in the same request.');
         const merged = { ...s, ...data };
         if (merged.preferredChannel) contactReady(merged as Student, merged.preferredChannel);
-        await tx.student.update({ where: { id }, data: { ...data, version: { increment: 1 } } });
+        await tx.student.update({
+          where: { id },
+          data: {
+            ...data,
+            ...(body.clearGuardianAge ? { guardianAge: null } : {}),
+            ...(body.clearAge ? { age: null } : {}),
+            version: { increment: 1 },
+          },
+        });
         return { id };
       },
     );

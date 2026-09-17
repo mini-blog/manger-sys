@@ -21,6 +21,8 @@ import { lessonDto, lessonInclude, FullLesson, ownedStudent } from './read.servi
 import { contactReady } from './students.service';
 import * as D from './dto';
 import type { Student } from '../generated/prisma/client';
+import { EntitlementsService } from './entitlements.service';
+import { closeRebooking } from './followup-policy';
 export async function teacherTask(tx: Tx, l: FullLesson) {
   const existing = await tx.task.findFirst({ where: { type: 'LESSON_FEEDBACK', sessionId: l.id } });
   const data = {
@@ -81,6 +83,7 @@ export class TeachingService {
   constructor(
     readonly commands: Commands,
     readonly clock: Clock,
+    readonly entitlements: EntitlementsService,
   ) {}
   async lesson(tx: Tx, id: string) {
     return required(await tx.classSession.findUnique({ where: { id }, include: lessonInclude }));
@@ -296,6 +299,7 @@ export class TeachingService {
       },
     );
   }
+  // Restore/move retain their existing rules until tasks 04e/04c migrate those commands.
   async eligible(
     tx: Tx,
     s: Student,
@@ -338,6 +342,14 @@ export class TeachingService {
       body,
       async (tx) => {
         await ownedStudent(tx, user, body.studentId);
+        if (body.sourceRebookingTaskId) {
+          if (body.kind !== 'TRIAL') bad('Only a trial booking can resolve a rebooking task.');
+          const source = required(
+            await tx.task.findUnique({ where: { id: body.sourceRebookingTaskId } }),
+          );
+          if (source.assigneeId !== user.id)
+            throw new ForbiddenException('This task is assigned to another user.');
+        }
       },
       async (tx) => {
         const s = await ownedStudent(tx, user, body.studentId),
@@ -350,12 +362,13 @@ export class TeachingService {
               ? 'Restore the cancelled booking instead.'
               : 'The student is already in this lesson.',
           );
-        await this.eligible(tx, s, l, body.kind);
+        await this.bookingEligible(tx, s, l, body.kind);
         const p = await tx.sessionParticipant.create({
           data: { sessionId: id, studentId: s.id, kind: body.kind },
         });
         await tx.classSession.update({ where: { id }, data: { version: { increment: 1 } } });
-        if (body.kind === 'TRIAL') await closeOldFollowups(tx, s.id, l.courseId, this.clock.now());
+        if (body.sourceRebookingTaskId)
+          await closeRebooking(tx, body.sourceRebookingTaskId, p.id, this.clock.now());
         await this.log(
           tx,
           user,
@@ -364,13 +377,31 @@ export class TeachingService {
           'Student added',
           key!,
           {},
-          { studentName: s.name, kind: body.kind },
+          {
+            studentName: s.name,
+            kind: body.kind,
+            ...(body.sourceRebookingTaskId
+              ? { sourceRebookingTaskId: body.sourceRebookingTaskId }
+              : {}),
+          },
           s.id,
           p.id,
         );
         return { id: p.id };
       },
     );
+  }
+  async bookingEligible(tx: Tx, s: Student, l: FullLesson, kind: 'TRIAL' | 'REGULAR') {
+    this.future(l);
+    if (l.participants.filter((p) => p.bookingStatus === 'BOOKED').length >= l.capacity)
+      fail('SESSION_FULL', 'This lesson is full.');
+    // Even an in-person preference must have a contact for a future lesson.
+    contactReady(s);
+    contactReady(s, s.preferredChannel ?? undefined);
+    if (kind === 'REGULAR' && !s.firstPurchasedAt)
+      fail('PURCHASE_REQUIRED', 'Record a formal lesson purchase before booking regular lessons.');
+    await this.studentConflict(tx, s.id, l);
+    await this.entitlements.assertAvailable(tx, s.id, kind);
   }
   async participantOwner(tx: Tx, user: Actor, id: string) {
     const p = required(await tx.sessionParticipant.findUnique({ where: { id } }));

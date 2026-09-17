@@ -95,3 +95,9 @@ export interface PackageSnapshot {
   currency: 'AUD';
   version: number;
 }
+
+export const GUARDIAN_GENDERS = ['FEMALE', 'MALE', 'NON_BINARY', 'PREFER_NOT_TO_SAY'] as const;
+export type GuardianGender = (typeof GUARDIAN_GENDERS)[number];
+
+export const STUDENT_GENDERS = ['FEMALE', 'MALE', 'NON_BINARY', 'PREFER_NOT_TO_SAY'] as const;
+export type StudentGender = (typeof STUDENT_GENDERS)[number];

@@ -4,6 +4,8 @@ import { Prisma } from '../generated/prisma/client';
 import { Actor, admin, bad, category, Clock, owner, required, Tx } from '../common/domain';
 import * as D from './dto';
 import { weekBounds } from '../schedule/time';
+import { membership, membershipBounds } from './membership';
+import { MEMBERSHIP_CATEGORIES, type MembershipCategory } from '@student/common';
 export const lessonInclude = {
   classGroup: true,
   course: true,
@@ -185,77 +187,141 @@ export class ReadService {
       ...(q.q ? { name: { contains: q.q, mode: 'insensitive' } } : {}),
       ...(q.mine === 'true' && user.role === 'ADMIN' ? { ownerAdminId: user.id } : {}),
     };
-    const [items, total] = await this.db.$transaction(
-      [
-        this.db.student.findMany({
-          where,
-          select: { id: true, name: true, yearLevel: true },
+    const now = this.clock.now();
+    const bounds = membershipBounds(now);
+    const categories: Record<MembershipCategory, Prisma.StudentWhereInput> = {
+      TRIAL_STUDENT: {
+        OR: [{ firstPurchasedAt: null }, { firstPurchasedAt: { gte: bounds.nextMidnight } }],
+      },
+      NEW_MEMBER: { firstPurchasedAt: { gte: bounds.newMemberFrom, lt: bounds.nextMidnight } },
+      MEMBER: { firstPurchasedAt: { lt: bounds.newMemberFrom } },
+    };
+    return this.db.$transaction(
+      async (tx) => {
+        const categoryCounts = {} as D.CategoryCountsDto;
+        for (const category of MEMBERSHIP_CATEGORIES)
+          categoryCounts[category] = await tx.student.count({
+            where: { AND: [where, categories[category]] },
+          });
+        const rows = await tx.student.findMany({
+          where: q.category ? { AND: [where, categories[q.category]] } : where,
+          select: {
+            id: true,
+            name: true,
+            yearLevel: true,
+            age: true,
+            gender: true,
+            firstPurchasedAt: true,
+            adminLink: { select: { admin: { select: { id: true, name: true } } } },
+          },
           orderBy: [{ name: 'asc' }, { id: 'asc' }],
           skip: (q.page - 1) * q.pageSize,
           take: q.pageSize,
-        }),
-        this.db.student.count({ where }),
-      ],
+        });
+        return {
+          items: rows.map(({ firstPurchasedAt, adminLink, ...s }) => ({
+            ...s,
+            ...(user.role === 'ADMIN' && adminLink ? { responsibleAdmin: adminLink.admin } : {}),
+            membershipCategory: membership(firstPurchasedAt, now).membershipCategory,
+          })),
+          total: q.category
+            ? categoryCounts[q.category]
+            : Object.values(categoryCounts).reduce((sum, n) => sum + n, 0),
+          categoryCounts,
+          page: q.page,
+          pageSize: q.pageSize,
+          membershipAsOfDate: bounds.membershipAsOfDate,
+          nextCategoryChangeAt: bounds.nextMidnight.toISOString(),
+        };
+      },
       { isolationLevel: 'RepeatableRead' },
     );
-    return { items, total, page: q.page, pageSize: q.pageSize };
   }
   async student(user: Actor, id: string): Promise<D.StudentDetailDto> {
-    const s = required(await this.db.student.findUnique({ where: { id } }));
-    if (
-      user.role === 'TEACHER' &&
-      !(await this.db.student.findFirst({
-        where: { id, ...this.studentScope(user) },
-        select: { id: true },
-      }))
-    )
-      throw new ForbiddenException('This student is not in your lessons.');
-    const canEdit = user.role === 'ADMIN' && s.ownerAdminId === user.id;
-    const participants =
-      canEdit || user.role === 'TEACHER'
-        ? await this.db.sessionParticipant.findMany({
-            where: {
-              studentId: id,
-              bookingStatus: 'BOOKED',
-              session: {
-                status: 'SCHEDULED',
-                ...(user.role === 'TEACHER' ? { teacherId: user.id } : {}),
+    return this.db.$transaction(
+      async (tx) => {
+        const now = this.clock.now();
+        const s = required(
+          await tx.student.findUnique({
+            where: { id },
+            include: {
+              adminLink: {
+                include: {
+                  admin: { select: { id: true, name: true } },
+                  createdByAdmin: { select: { id: true, name: true } },
+                },
               },
             },
-            include: { session: { include: lessonInclude } },
-            orderBy: { session: { startsAt: 'desc' } },
-            take: 100,
-          })
-        : [];
-    const base: D.StudentDetailDto = {
-      id: s.id,
-      name: s.name,
-      yearLevel: s.yearLevel,
-      canEdit,
-      version: s.version,
-      firstEnrolledOn: s.firstEnrolledOn?.toISOString().slice(0, 10) ?? null,
-      teachingRecords: participants.map((p) => ({
-        participantId: p.id,
-        lesson: lessonDto(p.session),
-        attendance: p.attendance,
-        feedback: p.feedback,
-      })),
-    };
-    if (canEdit)
-      for (const field of [
-        'guardianName',
-        'guardianRelationship',
-        'guardianPhone',
-        'guardianEmail',
-        'guardianWechat',
-        'preferredChannel',
-        'preferredLanguage',
-        'learningGoals',
-        'preferredTimes',
-        'interestedSubjects',
-      ] as const)
-        base[field] = s[field] ?? '';
-    return base;
+          }),
+        );
+        if (
+          user.role === 'TEACHER' &&
+          !(await tx.student.findFirst({
+            where: { id, ...this.studentScope(user) },
+            select: { id: true },
+          }))
+        )
+          throw new ForbiddenException('This student is not in your lessons.');
+        const canEdit = user.role === 'ADMIN' && s.ownerAdminId === user.id;
+        const participants =
+          canEdit || user.role === 'TEACHER'
+            ? await tx.sessionParticipant.findMany({
+                where: {
+                  studentId: id,
+                  bookingStatus: 'BOOKED',
+                  session: {
+                    status: 'SCHEDULED',
+                    ...(user.role === 'TEACHER' ? { teacherId: user.id } : {}),
+                  },
+                },
+                include: { session: { include: lessonInclude } },
+                orderBy: { session: { startsAt: 'desc' } },
+                take: 100,
+              })
+            : [];
+        const base: D.StudentDetailDto = {
+          ...membership(s.firstPurchasedAt, now),
+          ...(canEdit ? { firstPurchasedAt: s.firstPurchasedAt?.toISOString() ?? null } : {}),
+          id: s.id,
+          name: s.name,
+          yearLevel: s.yearLevel,
+          gender: s.gender,
+          age: s.age,
+          canEdit,
+          version: s.version,
+          firstEnrolledOn: s.firstEnrolledOn?.toISOString().slice(0, 10) ?? null,
+          teachingRecords: participants.map((p) => ({
+            participantId: p.id,
+            lesson: lessonDto(p.session),
+            attendance: p.attendance,
+            feedback: p.feedback,
+          })),
+        };
+        if (user.role === 'ADMIN' && s.adminLink) {
+          base.responsibleAdmin = s.adminLink.admin;
+          base.recordedByAdmin = s.adminLink.createdByAdmin;
+        }
+        if (canEdit) base.guardianAge = s.guardianAge;
+        if (canEdit)
+          for (const field of [
+            'guardianOccupation',
+            'guardianGender',
+            'guardianName',
+            'guardianRelationship',
+            'guardianPhone',
+            'guardianEmail',
+            'guardianWechat',
+            'preferredChannel',
+            'preferredLanguage',
+            'learningGoals',
+            'preferredTimes',
+            'interestedSubjects',
+          ] as const)
+            base[field] = s[field] ?? '';
+        return base;
+      },
+      { isolationLevel: 'RepeatableRead' },
+    );
   }
   async communications(user: Actor, id: string, q: D.PageQuery) {
     await ownedStudent(this.db, user, id);

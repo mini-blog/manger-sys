@@ -1,5 +1,9 @@
 import {
   YEAR_LEVELS,
+  GUARDIAN_GENDERS,
+  STUDENT_GENDERS,
+  MEMBERSHIP_CATEGORIES,
+  type MembershipCategory,
   COMMUNICATION_CHANNELS,
   SUPPORTED_LANGUAGES,
   PARTICIPANT_KINDS,
@@ -53,9 +57,24 @@ export class PageQuery {
   @O() @IsOptional() @text(0, 80) q?: string;
 }
 export class StudentQuery extends PageQuery {
+  @O({ enum: MEMBERSHIP_CATEGORIES })
+  @IsOptional()
+  @IsIn(MEMBERSHIP_CATEGORIES)
+  category?: MembershipCategory;
   @O() @IsOptional() @IsBooleanString() mine?: string;
 }
 export class StudentFields {
+  @O() @IsOptional() @text(0, 120) guardianOccupation?: string;
+  @O({ type: Number, minimum: 0, maximum: 120 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  guardianAge?: number;
+  @O({ enum: ['', ...GUARDIAN_GENDERS] })
+  @IsOptional()
+  @IsIn(['', ...GUARDIAN_GENDERS])
+  guardianGender?: string;
   @O() @IsOptional() @text(0, 100) guardianName?: string;
   @O() @IsOptional() @text(0, 100) guardianRelationship?: string;
   @O() @IsOptional() @text(0, 40) guardianPhone?: string;
@@ -74,6 +93,16 @@ export class StudentFields {
   @O() @IsOptional() @text() interestedSubjects?: string;
 }
 export class StudentInputDto extends StudentFields {
+  @O({ enum: ['', ...STUDENT_GENDERS] })
+  @IsOptional()
+  @IsIn(['', ...STUDENT_GENDERS])
+  gender?: string;
+  @O({ type: Number, minimum: 0, maximum: 120 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  age?: number;
   @P() @text(1, 100) name!: string;
   @P({ enum: years }) @IsIn(years) yearLevel!: string;
 }
@@ -81,6 +110,8 @@ export class CreateStudentDto extends StudentInputDto {
   @O({ default: true }) @IsOptional() @IsBoolean() giftTrialCredit?: boolean;
 }
 export class UpdateStudentDto extends PartialType(StudentInputDto) {
+  @O() @IsOptional() @IsBoolean() clearGuardianAge?: boolean;
+  @O() @IsOptional() @IsBoolean() clearAge?: boolean;
   @P() @IsInt() @Min(1) expectedVersion!: number;
 }
 export class VersionDto {
@@ -123,6 +154,10 @@ export class CancelSessionDto extends VersionDto {
 export class AddParticipantDto {
   @P() @text(1, 128) studentId!: string;
   @P({ enum: PARTICIPANT_KINDS }) @IsIn(PARTICIPANT_KINDS) kind!: ParticipantKind;
+  @O({ description: 'Optional open rebooking task for this student and subject; TRIAL only.' })
+  @IsOptional()
+  @text(1, 128)
+  sourceRebookingTaskId?: string;
 }
 export class MoveParticipantDto extends VersionDto {
   @P() @text(1, 128) targetSessionId!: string;
@@ -197,8 +232,26 @@ export class StudentDto {
   @P() name!: string;
   @P() yearLevel!: string;
 }
+export class StudentAdminViewDto {
+  @P() id!: string;
+  @P() name!: string;
+}
+export class StudentListItemDto extends StudentDto {
+  @P({ type: String, nullable: true }) gender!: string | null;
+  @P({ type: Number, nullable: true }) age!: number | null;
+  @O({ type: StudentAdminViewDto }) responsibleAdmin?: StudentAdminViewDto;
+  @P({ enum: MEMBERSHIP_CATEGORIES }) membershipCategory!: MembershipCategory;
+}
+export class CategoryCountsDto {
+  @P() TRIAL_STUDENT!: number;
+  @P() NEW_MEMBER!: number;
+  @P() MEMBER!: number;
+}
 export class StudentPageDto {
-  @P({ type: [StudentDto] }) items!: StudentDto[];
+  @P({ type: [StudentListItemDto] }) items!: StudentListItemDto[];
+  @P({ type: CategoryCountsDto }) categoryCounts!: CategoryCountsDto;
+  @P() membershipAsOfDate!: string;
+  @P() nextCategoryChangeAt!: string;
   @P() total!: number;
   @P() page!: number;
   @P() pageSize!: number;
@@ -246,7 +299,14 @@ export class TeachingRecordDto {
   @P() attendance!: string;
   @P({ type: String, nullable: true }) feedback!: string | null;
 }
-export class StudentDetailDto extends StudentDto {
+export class StudentDetailDto extends StudentListItemDto {
+  @O({ type: StudentAdminViewDto, nullable: true }) recordedByAdmin?: StudentAdminViewDto | null;
+  @O() guardianOccupation?: string;
+  @O({ type: Number, nullable: true }) guardianAge?: number | null;
+  @O() guardianGender?: string;
+  @O({ type: String, nullable: true }) firstPurchasedAt?: string | null;
+  @P() membershipAsOfDate!: string;
+  @P() nextCategoryChangeAt!: string;
   @P() canEdit!: boolean;
   @P() version!: number;
   @P({ type: String, nullable: true }) firstEnrolledOn!: string | null;

@@ -139,6 +139,19 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TRIAL_STUDENT",
+                "NEW_MEMBER",
+                "MEMBER"
+              ]
+            }
+          },
+          {
             "name": "mine",
             "required": false,
             "in": "query",
@@ -1728,7 +1741,22 @@
           "ok"
         ]
       },
-      "StudentDto": {
+      "StudentAdminViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "StudentListItemDto": {
         "type": "object",
         "properties": {
           "id": {
@@ -1739,12 +1767,53 @@
           },
           "yearLevel": {
             "type": "string"
+          },
+          "gender": {
+            "type": "string",
+            "nullable": true
+          },
+          "age": {
+            "type": "number",
+            "nullable": true
+          },
+          "responsibleAdmin": {
+            "$ref": "#/components/schemas/StudentAdminViewDto"
+          },
+          "membershipCategory": {
+            "type": "string",
+            "enum": [
+              "TRIAL_STUDENT",
+              "NEW_MEMBER",
+              "MEMBER"
+            ]
           }
         },
         "required": [
           "id",
           "name",
-          "yearLevel"
+          "yearLevel",
+          "gender",
+          "age",
+          "membershipCategory"
+        ]
+      },
+      "CategoryCountsDto": {
+        "type": "object",
+        "properties": {
+          "TRIAL_STUDENT": {
+            "type": "number"
+          },
+          "NEW_MEMBER": {
+            "type": "number"
+          },
+          "MEMBER": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "TRIAL_STUDENT",
+          "NEW_MEMBER",
+          "MEMBER"
         ]
       },
       "StudentPageDto": {
@@ -1753,8 +1822,17 @@
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/StudentDto"
+              "$ref": "#/components/schemas/StudentListItemDto"
             }
+          },
+          "categoryCounts": {
+            "$ref": "#/components/schemas/CategoryCountsDto"
+          },
+          "membershipAsOfDate": {
+            "type": "string"
+          },
+          "nextCategoryChangeAt": {
+            "type": "string"
           },
           "total": {
             "type": "number"
@@ -1768,6 +1846,9 @@
         },
         "required": [
           "items",
+          "categoryCounts",
+          "membershipAsOfDate",
+          "nextCategoryChangeAt",
           "total",
           "page",
           "pageSize"
@@ -1776,6 +1857,24 @@
       "CreateStudentDto": {
         "type": "object",
         "properties": {
+          "guardianOccupation": {
+            "type": "string"
+          },
+          "guardianAge": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120
+          },
+          "guardianGender": {
+            "type": "string",
+            "enum": [
+              "",
+              "FEMALE",
+              "MALE",
+              "NON_BINARY",
+              "PREFER_NOT_TO_SAY"
+            ]
+          },
           "guardianName": {
             "type": "string"
           },
@@ -1817,6 +1916,21 @@
           "interestedSubjects": {
             "type": "string"
           },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "",
+              "FEMALE",
+              "MALE",
+              "NON_BINARY",
+              "PREFER_NOT_TO_SAY"
+            ]
+          },
+          "age": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120
+          },
           "name": {
             "type": "string"
           },
@@ -1845,6 +1959,25 @@
           }
         },
         "required": [
+          "name",
+          "yearLevel"
+        ]
+      },
+      "StudentDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "yearLevel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
           "name",
           "yearLevel"
         ]
@@ -1966,6 +2099,54 @@
           "yearLevel": {
             "type": "string"
           },
+          "gender": {
+            "type": "string",
+            "nullable": true
+          },
+          "age": {
+            "type": "number",
+            "nullable": true
+          },
+          "responsibleAdmin": {
+            "$ref": "#/components/schemas/StudentAdminViewDto"
+          },
+          "membershipCategory": {
+            "type": "string",
+            "enum": [
+              "TRIAL_STUDENT",
+              "NEW_MEMBER",
+              "MEMBER"
+            ]
+          },
+          "recordedByAdmin": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StudentAdminViewDto"
+              }
+            ]
+          },
+          "guardianOccupation": {
+            "type": "string"
+          },
+          "guardianAge": {
+            "type": "number",
+            "nullable": true
+          },
+          "guardianGender": {
+            "type": "string"
+          },
+          "firstPurchasedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "membershipAsOfDate": {
+            "type": "string"
+          },
+          "nextCategoryChangeAt": {
+            "type": "string"
+          },
           "canEdit": {
             "type": "boolean"
           },
@@ -2017,6 +2198,11 @@
           "id",
           "name",
           "yearLevel",
+          "gender",
+          "age",
+          "membershipCategory",
+          "membershipAsOfDate",
+          "nextCategoryChangeAt",
           "canEdit",
           "version",
           "firstEnrolledOn",
@@ -2026,6 +2212,24 @@
       "UpdateStudentDto": {
         "type": "object",
         "properties": {
+          "guardianOccupation": {
+            "type": "string"
+          },
+          "guardianAge": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120
+          },
+          "guardianGender": {
+            "type": "string",
+            "enum": [
+              "",
+              "FEMALE",
+              "MALE",
+              "NON_BINARY",
+              "PREFER_NOT_TO_SAY"
+            ]
+          },
           "guardianName": {
             "type": "string"
           },
@@ -2067,6 +2271,21 @@
           "interestedSubjects": {
             "type": "string"
           },
+          "gender": {
+            "type": "string",
+            "enum": [
+              "",
+              "FEMALE",
+              "MALE",
+              "NON_BINARY",
+              "PREFER_NOT_TO_SAY"
+            ]
+          },
+          "age": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120
+          },
           "name": {
             "type": "string"
           },
@@ -2088,6 +2307,12 @@
               "Year 12",
               "Not assessed"
             ]
+          },
+          "clearGuardianAge": {
+            "type": "boolean"
+          },
+          "clearAge": {
+            "type": "boolean"
           },
           "expectedVersion": {
             "type": "number"
@@ -2468,6 +2693,10 @@
               "TRIAL",
               "REGULAR"
             ]
+          },
+          "sourceRebookingTaskId": {
+            "type": "string",
+            "description": "Optional open rebooking task for this student and subject; TRIAL only."
           }
         },
         "required": [

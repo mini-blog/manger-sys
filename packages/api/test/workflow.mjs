@@ -108,7 +108,15 @@ try {
   const s = await student(a, 'Trial Student'),
     s2 = await student(b, 'Other Admin Trial'),
     reg = await student(a, 'Regular');
-  // Legacy booking regression fixture only; this date is no longer client-writable.
+  // New bookings require a real purchase; legacy roster/move still read this historical date.
+  ok(
+    await req(a, '/entitlements/grants', {
+      studentId: reg.id,
+      bucket: 'REGULAR',
+      mode: 'CUSTOM',
+      quantity: 1,
+    }),
+  );
   await db.student.update({
     where: { id: reg.id },
     data: { firstEnrolledOn: new Date('2028-08-29') },
@@ -408,7 +416,7 @@ try {
         kind: 'REGULAR',
       })
     ).data.code,
-    'ENROLMENT_REQUIRED',
+    'PURCHASE_REQUIRED',
   );
   assert.equal(
     (

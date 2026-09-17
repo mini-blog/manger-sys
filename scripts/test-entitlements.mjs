@@ -65,7 +65,7 @@ try {
   run('pnpm', ['--filter', '@student/api...', 'build'], env);
   run('pnpm', ['db:migrate'], env);
   run(process.execPath, ['packages/api/test/entitlements.mjs'], env);
-  // Legacy workflow regression remains explicit until the coordinated booking cutover.
+  // Regression covers new booking rules and the remaining legacy lifecycle until cutover.
   run('pnpm', ['db:seed'], env);
   run(process.execPath, ['packages/api/test/integration.mjs'], env);
   run(process.execPath, ['packages/api/test/workflow.mjs'], env);

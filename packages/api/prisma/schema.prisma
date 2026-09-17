@@ -72,6 +72,8 @@ model User {
   passwordHash String
   sessions     AuthSession[]
   students     Student[]
+  studentAdminLinks StudentAdminLink[] @relation("ResponsibleAdmin")
+  createdStudentLinks StudentAdminLink[] @relation("RecordingAdmin")
   lessons      ClassSession[]
   tasks        Task[]
   communications CommunicationLog[]
@@ -90,12 +92,18 @@ model AuthSession {
 }
 
 model Student {
+  gender String?
+  age Int?
   id           String @id @default(cuid())
   name         String
   yearLevel    String
   ownerAdminId String
   owner        User @relation(fields: [ownerAdminId], references: [id])
   participants SessionParticipant[]
+  adminLink StudentAdminLink?
+  guardianOccupation String?
+  guardianAge Int?
+  guardianGender String?
   guardianName String?
   guardianRelationship String?
   guardianPhone String?
@@ -115,6 +123,21 @@ model Student {
   communications CommunicationLog[]
   changes ScheduleChange[]
   @@index([ownerAdminId])
+}
+
+// Current admin mirrors Student.ownerAdminId through a DB trigger during compatibility rollout.
+// Recording admin is immutable once known; migrated records intentionally keep it null.
+model StudentAdminLink {
+  studentId String @id
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  adminId String
+  admin User @relation("ResponsibleAdmin", fields: [adminId], references: [id], onDelete: Restrict)
+  createdByAdminId String?
+  createdByAdmin User? @relation("RecordingAdmin", fields: [createdByAdminId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@index([adminId])
+  @@index([createdByAdminId])
+  @@unique([studentId, adminId], map: "StudentAdminLink_student_owner_key")
 }
 
 model Course {

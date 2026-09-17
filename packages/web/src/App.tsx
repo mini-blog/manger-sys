@@ -7,6 +7,7 @@ import { TaskDetail } from './pages/TaskDetail';
 import { StudentDetail } from './pages/StudentDetail';
 import { Timetable } from './pages/Timetable';
 import { Students } from './pages/Students';
+import { Entitlements } from './pages/Entitlements';
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
         <Route path="tasks/:id" element={<TaskDetail />} />
         <Route path="students/:id" element={<StudentDetail />} />
         <Route path="students" element={<Students />} />
+        <Route path="entitlements" element={<Entitlements />} />
         <Route path="timetable" element={<Timetable />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

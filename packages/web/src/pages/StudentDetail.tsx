@@ -1,4 +1,5 @@
-import type { SupportedLanguage } from '@student/common';
+import { GuardianFields, guardianFormFrom, guardianPayload } from '../components/GuardianFields';
+import { StudentDemographicsFields } from '../components/StudentDemographicsFields';
 import { YEAR_LEVELS } from '@student/common';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -27,6 +28,9 @@ import {
   type CommunicationFields,
 } from '../components/FormParts';
 import { local } from '../lib/time';
+import { membershipLabels } from '../lib/membership';
+import { CreditBalance } from '../components/CreditBalances';
+import { useMembershipRefresh } from '../hooks/useMembershipRefresh';
 type Student = components['schemas']['StudentDetailDto'];
 export function StudentDetail() {
   const { id = '' } = useParams();
@@ -38,9 +42,14 @@ export function StudentDetail() {
       return data;
     },
   });
+  useMembershipRefresh(query.data?.nextCategoryChangeAt);
   return (
     <Stack spacing={3}>
-      <Button component={Link} to="/students" sx={{ alignSelf: 'flex-start' }}>
+      <Button
+        component={Link}
+        to={`/students?category=${query.data?.membershipCategory ?? 'TRIAL_STUDENT'}`}
+        sx={{ alignSelf: 'flex-start' }}
+      >
         ← Students
       </Button>
       <Status query={query} />
@@ -50,24 +59,18 @@ export function StudentDetail() {
 }
 function StudentProfile({ student: s }: { student: Student }) {
   const [edit, setEdit] = useState(false);
+  const [age, setAge] = useState(s.age == null ? '' : String(s.age));
+  const [gender, setGender] = useState(s.gender ?? '');
   const [fields, setFields] = useState({
     name: s.name,
     yearLevel: s.yearLevel,
-    guardianName: s.guardianName ?? '',
-    guardianRelationship: s.guardianRelationship ?? '',
-    guardianPhone: s.guardianPhone ?? '',
-    guardianEmail: s.guardianEmail ?? '',
-    guardianWechat: s.guardianWechat ?? '',
-    preferredChannel: s.preferredChannel ?? '',
-    preferredLanguage: s.preferredLanguage ?? 'en-AU',
-    learningGoals: s.learningGoals ?? '',
-    preferredTimes: s.preferredTimes ?? '',
-    interestedSubjects: s.interestedSubjects ?? '',
+    ...guardianFormFrom(s),
   });
   const save = useWrite('patch', '/api/students/{id}', { id: s.id }, () => setEdit(false));
   const text = (key: keyof typeof fields, title: string, multiline = false) => (
     <TextField
       key={key}
+      disabled={save.isPending}
       label={title}
       value={fields[key]}
       onChange={(e) => setFields({ ...fields, [key]: e.target.value })}
@@ -86,11 +89,13 @@ function StudentProfile({ student: s }: { student: Student }) {
           </Typography>
           <Typography color="text.secondary">
             {s.yearLevel}
-            {s.firstEnrolledOn ? ` · Legacy enrolment ${s.firstEnrolledOn}` : ''}
+            {` · ${membershipLabels[s.membershipCategory]}`}
+            {s.gender ? ` · ${label(s.gender)}` : ''}
+            {s.age != null ? ` · Age ${s.age}` : ''}
           </Typography>
         </div>
         {s.canEdit && (
-          <Button variant="outlined" onClick={() => setEdit(!edit)}>
+          <Button variant="outlined" disabled={save.isPending} onClick={() => setEdit(!edit)}>
             {edit ? 'Close editor' : 'Edit student'}
           </Button>
         )}
@@ -102,11 +107,13 @@ function StudentProfile({ student: s }: { student: Student }) {
           onSubmit={(e) => {
             e.preventDefault();
             save.mutate({
-              ...fields,
+              name: fields.name,
+              ...guardianPayload(fields),
+              age: age === '' ? undefined : Number(age),
+              gender: gender as components['schemas']['UpdateStudentDto']['gender'],
+              clearAge: age === '',
+              clearGuardianAge: fields.guardianAge === '',
               yearLevel: fields.yearLevel as components['schemas']['UpdateStudentDto']['yearLevel'],
-              preferredChannel:
-                fields.preferredChannel as components['schemas']['UpdateStudentDto']['preferredChannel'],
-              preferredLanguage: fields.preferredLanguage as SupportedLanguage,
               expectedVersion: s.version,
             });
           }}
@@ -118,6 +125,7 @@ function StudentProfile({ student: s }: { student: Student }) {
               label="Year level"
               select
               value={fields.yearLevel}
+              disabled={save.isPending}
               onChange={(e) => setFields({ ...fields, yearLevel: e.target.value })}
             >
               {YEAR_LEVELS.map((y) => (
@@ -126,45 +134,19 @@ function StudentProfile({ student: s }: { student: Student }) {
                 </MenuItem>
               ))}
             </TextField>
+            <StudentDemographicsFields
+              age={age}
+              gender={gender}
+              onAge={setAge}
+              onGender={setGender}
+              disabled={save.isPending}
+            />
             <Divider />
-            {text('guardianName', 'Guardian name')}
-            {text('guardianRelationship', 'Relationship')}
-            <Stack direction={{ xs: 'column', sm: 'row' }} gap={2}>
-              {text('guardianPhone', 'Phone')}
-              {text('guardianEmail', 'Email')}
-            </Stack>
-            {text('guardianWechat', 'WeChat')}
-            <Stack direction="row" gap={2}>
-              <TextField
-                label="Preferred channel"
-                select
-                fullWidth
-                value={fields.preferredChannel}
-                onChange={(e) => setFields({ ...fields, preferredChannel: e.target.value })}
-              >
-                <MenuItem value="">Not set</MenuItem>
-                {channels
-                  .filter((c) => c !== 'IN_PERSON')
-                  .map((c) => (
-                    <MenuItem key={c} value={c}>
-                      {label(c)}
-                    </MenuItem>
-                  ))}
-              </TextField>
-              <TextField
-                label="Language"
-                select
-                fullWidth
-                value={fields.preferredLanguage}
-                onChange={(e) => setFields({ ...fields, preferredLanguage: e.target.value })}
-              >
-                <MenuItem value="en-AU">English</MenuItem>
-                <MenuItem value="zh-CN">中文</MenuItem>
-              </TextField>
-            </Stack>
-            {text('learningGoals', 'Learning goals', true)}
-            {text('preferredTimes', 'Preferred lesson times', true)}
-            {text('interestedSubjects', 'Subjects of interest', true)}
+            <GuardianFields
+              value={fields}
+              onChange={(value) => setFields({ ...fields, ...value })}
+              disabled={save.isPending}
+            />
             <Button
               type="submit"
               variant="contained"
@@ -176,15 +158,31 @@ function StudentProfile({ student: s }: { student: Student }) {
           </Stack>
         </Paper>
       )}
+      {s.responsibleAdmin && (
+        <Typography variant="body2" color="text.secondary">
+          Responsible admin: {s.responsibleAdmin.name} · Recorded by:{' '}
+          {s.recordedByAdmin?.name ?? 'Unknown (historical record)'}
+        </Typography>
+      )}
+      {s.canEdit && <StudentCredits student={s} />}
       {s.canEdit && !edit && (
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6">Guardian & preferences</Typography>
           <Typography sx={{ mt: 1 }}>
-            {s.guardianName || 'No guardian details'}
+            {s.guardianName || 'Guardian name not provided'}
             {s.guardianRelationship ? ` · ${s.guardianRelationship}` : ''}
           </Typography>
           <Typography color="text.secondary">
             {[s.guardianPhone, s.guardianEmail, s.guardianWechat].filter(Boolean).join(' · ')}
+          </Typography>
+          <Typography color="text.secondary">
+            {[
+              s.guardianOccupation ? `Occupation: ${s.guardianOccupation}` : '',
+              s.guardianAge != null ? `Age: ${s.guardianAge}` : '',
+              s.guardianGender ? `Gender: ${label(s.guardianGender)}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
           </Typography>
           {s.learningGoals && <Typography sx={{ mt: 2 }}>Goals: {s.learningGoals}</Typography>}
           {s.preferredTimes && <Typography>Preferred times: {s.preferredTimes}</Typography>}
@@ -217,6 +215,50 @@ function StudentProfile({ student: s }: { student: Student }) {
       </Paper>
       {s.canEdit && <Communications student={s} />}
     </>
+  );
+}
+function StudentCredits({ student }: { student: Student }) {
+  const query = useQuery({
+    queryKey: ['entitlements', 'summary', student.id],
+    queryFn: async () => {
+      const { data, error } = await api.GET('/api/students/{id}/entitlements', {
+        params: { path: { id: student.id } },
+      });
+      if (!data) throw apiError(error);
+      return data;
+    },
+  });
+  const params = new URLSearchParams({
+    studentId: student.id,
+    action: 'grant',
+    returnTo: `/students/${student.id}`,
+  });
+  return (
+    <Paper sx={{ p: 3 }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="h6">Lesson credits</Typography>
+        <Button component={Link} to={`/entitlements?${params}`}>
+          Add credits
+        </Button>
+      </Stack>
+      <Status query={query} />
+      {query.data && (
+        <Stack direction="row" gap={5}>
+          <div>
+            <Typography variant="body2" color="text.secondary">
+              Trial lessons
+            </Typography>
+            <CreditBalance balance={query.data.balances.TRIAL} />
+          </div>
+          <div>
+            <Typography variant="body2" color="text.secondary">
+              Regular lessons
+            </Typography>
+            <CreditBalance balance={query.data.balances.REGULAR} />
+          </div>
+        </Stack>
+      )}
+    </Paper>
   );
 }
 export function Communications({ student: s }: { student: Student }) {
