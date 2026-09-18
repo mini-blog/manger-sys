@@ -114,7 +114,11 @@ export function MyTasks() {
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      {admin ? 'Follow-up' : 'Student evaluation'}
+                      {t.type === 'STUDENT_AI_REPORT'
+                        ? 'Student report'
+                        : t.type === 'TRIAL_FEEDBACK'
+                          ? 'Student evaluation'
+                          : 'Purchase follow-up'}
                       {t.followupOutcome && (
                         <Typography variant="body2">{label(t.followupOutcome)}</Typography>
                       )}

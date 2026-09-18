@@ -17,7 +17,7 @@ export const BOOKING_STATUSES = ['BOOKED', 'CANCELLED'] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 export const ATTENDANCE_STATUSES = ['PENDING', 'ATTENDED', 'NO_SHOW'] as const;
 export type Attendance = (typeof ATTENDANCE_STATUSES)[number];
-export const TASK_TYPES = ['TRIAL_FOLLOWUP', 'TRIAL_FEEDBACK'] as const;
+export const TASK_TYPES = ['TRIAL_FOLLOWUP', 'TRIAL_FEEDBACK', 'STUDENT_AI_REPORT'] as const;
 export type TaskType = (typeof TASK_TYPES)[number];
 export const TASK_STATUSES = ['OPEN', 'DONE', 'CANCELLED'] as const;
 export type TaskStatus = (typeof TASK_STATUSES)[number];
@@ -65,7 +65,7 @@ export const ENTITLEMENT_KINDS = [
 export type EntitlementKind = (typeof ENTITLEMENT_KINDS)[number];
 export const MEMBERSHIP_CATEGORIES = ['TRIAL_STUDENT', 'NEW_MEMBER', 'MEMBER'] as const;
 export type MembershipCategory = (typeof MEMBERSHIP_CATEGORIES)[number];
-export const TASK_PURPOSES = ['FIRST_PURCHASE'] as const;
+export const TASK_PURPOSES = ['FIRST_PURCHASE', 'POST_TRIAL_REVIEW'] as const;
 export type TaskPurpose = (typeof TASK_PURPOSES)[number];
 export const PURCHASE_MODES = ['CUSTOM', 'PACKAGE'] as const;
 export type PurchaseMode = (typeof PURCHASE_MODES)[number];
@@ -90,15 +90,10 @@ export const STUDENT_GENDERS = ['FEMALE', 'MALE', 'NON_BINARY', 'PREFER_NOT_TO_S
 export type StudentGender = (typeof STUDENT_GENDERS)[number];
 
 /** Final follow-up result is independent of TaskStatus and student membership. */
-export const MANUAL_FOLLOWUP_OUTCOMES = [
-  'INTERESTED',
-  'CONSIDERING',
-  'NOT_INTERESTED',
-  'UNREACHABLE',
-] as const;
+export const MANUAL_FOLLOWUP_OUTCOMES = ['PURCHASED', 'NOT_PURCHASED'] as const;
 export type ManualFollowupOutcome = (typeof MANUAL_FOLLOWUP_OUTCOMES)[number];
 /** PURCHASE_RECORDED is reserved for a verified regular-credit grant. */
-export const FOLLOWUP_OUTCOMES = ['PURCHASE_RECORDED', ...MANUAL_FOLLOWUP_OUTCOMES] as const;
+export const FOLLOWUP_OUTCOMES = ['PURCHASE_RECORDED', 'NOT_PURCHASED'] as const;
 export type FollowupOutcome = (typeof FOLLOWUP_OUTCOMES)[number];
 export const FOLLOWUP_REASON_TAGS = [
   'PRICE',
@@ -108,5 +103,7 @@ export const FOLLOWUP_REASON_TAGS = [
   'CHILD_INTEREST',
   'FAMILY_PLAN',
   'OTHER',
+  'COMPARING',
+  'UNREACHABLE',
 ] as const;
 export type FollowupReasonTag = (typeof FOLLOWUP_REASON_TAGS)[number];

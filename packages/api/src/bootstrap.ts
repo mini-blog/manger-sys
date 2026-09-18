@@ -14,13 +14,13 @@ export async function createApp() {
   app.useGlobalPipes(
     {
       transform(value: unknown, metadata: { type: string }) {
-        const visit = (v: unknown): void => {
-          if (v === null)
+        const visit = (v: unknown, key?: string): void => {
+          if (v === null && key !== 'purchaseIntentRating')
             throw new BadRequestException({
               code: 'VALIDATION_FAILED',
               message: 'Omit optional fields instead of sending null.',
             });
-          if (v && typeof v === 'object') for (const x of Object.values(v)) visit(x);
+          if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) visit(x, k);
         };
         if (metadata.type === 'body') visit(value);
         return value;

@@ -1,3 +1,4 @@
+import { richText } from '../common/rich-text';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import {
   Actor,
@@ -399,11 +400,12 @@ export class TeachingService {
     );
   }
   participantFeedback(user: Actor, id: string, body: D.ParticipantFeedbackDto, key?: string) {
-    const normalize = (text?: string) => (text ?? '').replace(/\r\n?/g, '\n').trim();
+    const note = richText(body.teacherNoteHtml, 2000);
     const content = {
-      feedback: normalize(body.feedback),
-      abilityNote: normalize(body.abilityNote),
-      preferenceNote: normalize(body.preferenceNote),
+      classroomPerformanceRating: body.classroomPerformanceRating,
+      overallAbilityRating: body.overallAbilityRating,
+      teacherNoteHtml: note.html,
+      teacherNoteText: note.text,
     };
     return this.commands.run(
       user,
@@ -447,9 +449,9 @@ export class TeachingService {
         if (p.feedbackSubmittedAt) {
           if (
             task.status === 'DONE' &&
-            content.feedback === normalize(p.feedback ?? undefined) &&
-            content.abilityNote === normalize(p.abilityNote ?? undefined) &&
-            content.preferenceNote === normalize(p.preferenceNote ?? undefined)
+            content.classroomPerformanceRating === Number(p.classroomPerformanceRating) &&
+            content.overallAbilityRating === Number(p.overallAbilityRating) &&
+            content.teacherNoteHtml === p.teacherNoteHtml
           )
             return { id };
           fail(
@@ -459,14 +461,17 @@ export class TeachingService {
         }
         if (task.status !== 'OPEN') fail('TASK_CLOSED', 'This evaluation task is no longer open.');
         version(p.version, body.expectedVersion);
-        if (!content.feedback) bad('Individual feedback is required.');
+        if (
+          [content.classroomPerformanceRating, content.overallAbilityRating].some(
+            (n) => !Number.isFinite(n) || n < 1 || n > 5 || (n * 2) % 1,
+          )
+        )
+          bad('Ratings must be 1–5 in half-star steps.');
         const snapshot = rosterMembership(p.student, l.startsAt);
         const updated = await tx.sessionParticipant.update({
           where: { id },
           data: {
-            feedback: content.feedback,
-            abilityNote: content.abilityNote || null,
-            preferenceNote: content.preferenceNote || null,
+            ...content,
             feedbackSubmittedAt: now,
             categorySnapshot: p.categorySnapshot ?? snapshot.category,
             membershipCategorySnapshot: p.membershipCategorySnapshot ?? snapshot.membershipCategory,
@@ -492,9 +497,9 @@ export class TeachingService {
               startsAt: l.startsAt,
               endsAt: l.endsAt,
               membershipCategory: updated.membershipCategorySnapshot,
-              feedback: updated.feedback,
-              abilityNote: updated.abilityNote,
-              preferenceNote: updated.preferenceNote,
+              classroomPerformanceRating: Number(updated.classroomPerformanceRating),
+              overallAbilityRating: Number(updated.overallAbilityRating),
+              teacherNoteHtml: updated.teacherNoteHtml,
               feedbackSubmittedAt: now,
             }),
           },

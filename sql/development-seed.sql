@@ -4,6 +4,7 @@
 -- super@demo.studentsys.test；admin01..05@demo.studentsys.test；teacher01..20@demo.studentsys.test。
 -- 如已有启用的超级管理员则复用，不改变其账号或密码，不再创建第二个super。
 -- 一次事务完成，失败全部回滚；重复执行按完成标记跳过，不补余额、不重开待办。
+-- AI v2：19学生、3课次、三种报告状态。READY为手写fixture，不代表真实LLM成功。
 -- 日期按执行日的Australia/Melbourne日历计算。充值为课时登记，不代表核验到账。
 
 BEGIN;
@@ -11,7 +12,7 @@ SELECT pg_advisory_xact_lock(73192461);
 
 DO $seed$
 DECLARE
-  prefix constant text := 'launch-demo-v1-';
+  prefix constant text := 'ai-demo-v2-';
   password_hash constant text := '2b9909645d31745a6dbc6be1b112da80:6a49ac58420fcc69a03fbe4221e1fd1e9dad2d729f08650abbd71bef0c61f4cd9105d7baf2ad3338ff9475fd00944b54469581cee7cf4b2c3b74dd0cf7825078';
   local_day date := (now() AT TIME ZONE 'Australia/Melbourne')::date;
   super_id text;
@@ -152,14 +153,14 @@ BEGIN
   participant_id := prefix||'trial-01-booking';
   SELECT s."endsAt"+interval '10 minutes' INTO STRICT feedback_at
     FROM "ClassSession" s JOIN "SessionParticipant" p ON p."sessionId"=s.id WHERE p.id=participant_id;
-  UPDATE "SessionParticipant" SET feedback='Participated confidently; can add fractions with guidance.',
-    "abilityNote"='Practise equivalent fractions.',"preferenceNote"='Enjoys visual examples and small-group practice.',
+  UPDATE "SessionParticipant" SET "classroomPerformanceRating"=4.5,
+    "overallAbilityRating"=3.5,"teacherNoteHtml"='<p>Practise equivalent fractions; enjoys visual examples.</p>',"teacherNoteText"='Practise equivalent fractions; enjoys visual examples.',
     "feedbackSubmittedAt"=feedback_at,"categorySnapshot"='TRIAL',"membershipCategorySnapshot"='TRIAL_STUDENT',version=3
     WHERE id=participant_id;
   SELECT jsonb_build_object('participantId',p.id,'participantVersion',p.version,'sessionId',s.id,
     'studentId',st.id,'studentName',st.name,'className',g.name,'courseId',c.id,'courseName',c.name,
     'teacherId',u.id,'teacherName',u.name,'startsAt',s."startsAt",'endsAt',s."endsAt",'checkedInAt',p."checkedInAt",
-    'feedback',p.feedback,'abilityNote',p."abilityNote",'preferenceNote',p."preferenceNote",
+    'classroomPerformanceRating',p."classroomPerformanceRating",'overallAbilityRating',p."overallAbilityRating",'teacherNoteHtml',p."teacherNoteHtml",
     'feedbackSubmittedAt',p."feedbackSubmittedAt",'membershipCategory','TRIAL_STUDENT') INTO STRICT snapshot
     FROM "SessionParticipant" p JOIN "Student" st ON st.id=p."studentId"
     JOIN "ClassSession" s ON s.id=p."sessionId" JOIN "ClassGroup" g ON g.id=s."classGroupId"
@@ -171,21 +172,100 @@ BEGIN
     'FIRST_PURCHASE','TRIAL_COMPLETED',snapshot,feedback_at,
     (((feedback_at AT TIME ZONE 'Australia/Melbourne')::date+1)+time '17:00') AT TIME ZONE 'Australia/Melbourne',feedback_at,feedback_at);
 
+
+  -- Additional complete branches: report pending / ready fixture / failed / purchased.
+  FOR i IN 6..9 LOOP
+    student_id := prefix||'trial-'||lpad(i::text,2,'0');
+    owner_id := prefix||'admin-'||lpad((i-5)::text,2,'0');
+    participant_id := student_id||'-booking';
+    INSERT INTO "Student" (id,name,"yearLevel",type,age,gender,"ownerAdminId","guardianName","guardianRelationship","guardianEmail","updatedAt")
+    VALUES (student_id,'AI Scenario '||i,'Year 5','TRIAL',10,'PREFER_NOT_TO_SAY',owner_id,
+      'Scenario Guardian '||i,'Parent','scenario'||i||'@demo.studentsys.test',now());
+    UPDATE "StudentAdminLink" SET "createdByAdminId"=owner_id WHERE "studentId"=student_id;
+    INSERT INTO "EntitlementEntry" (id,"studentId",bucket,kind,quantity,"actorId","sourceKey")
+    VALUES (student_id||'-gift',student_id,'TRIAL','INITIAL_TRIAL',1,owner_id,student_id||':gift');
+    SELECT "startsAt" INTO starts_at FROM "ClassSession" WHERE id=prefix||'session-1';
+    INSERT INTO "SessionParticipant" (id,"sessionId","studentId",kind,attendance,"checkedInAt","checkedInBy",
+       "feedbackSubmittedAt","classroomPerformanceRating","overallAbilityRating","teacherNoteHtml","teacherNoteText")
+    VALUES (participant_id,prefix||'session-1',student_id,'TRIAL','ATTENDED',starts_at,prefix||'teacher-01',
+      starts_at+interval '70 minutes',4.5,3.5,'<p>Participates well; practise fractions.</p>','Participates well; practise fractions.');
+    INSERT INTO "EntitlementEntry" (id,"studentId",bucket,kind,quantity,"participantId","actorId","sourceKey")
+    VALUES (student_id||'-consume',student_id,'TRIAL','CONSUMPTION',-1,participant_id,prefix||'teacher-01',student_id||':consume');
+    INSERT INTO "Task" (id,type,"assigneeId","sessionId","participantId",status,"completedAt","availableAt","dueAt","updatedAt")
+    VALUES (participant_id||'-evaluation','TRIAL_FEEDBACK',prefix||'teacher-01',prefix||'session-1',participant_id,
+      'DONE',starts_at+interval '70 minutes',starts_at+interval '1 hour',now(),now());
+    IF i=9 THEN
+      INSERT INTO "EntitlementEntry" (id,"studentId",bucket,kind,quantity,"actorId","sourceKey")
+      VALUES (student_id||'-purchase',student_id,'REGULAR','PURCHASE',10,owner_id,student_id||':purchase');
+      UPDATE "Student" SET type='MEMBER',"firstPurchasedAt"=now() WHERE id=student_id;
+    END IF;
+    INSERT INTO "Task" (id,type,"assigneeId","sessionId","participantId",purpose,status,"completedAt","followupOutcome",
+       "resolvedByEntitlementEntryId","availableAt","dueAt","updatedAt")
+    VALUES (participant_id||'-followup','TRIAL_FOLLOWUP',owner_id,prefix||'session-1',participant_id,'FIRST_PURCHASE',
+       'DONE',now(),CASE WHEN i=9 THEN 'PURCHASE_RECORDED'::"FollowupOutcome" ELSE 'NOT_PURCHASED'::"FollowupOutcome" END,
+       CASE WHEN i=9 THEN student_id||'-purchase' END,starts_at+interval '70 minutes',now(),now());
+    INSERT INTO "CommunicationLog" (id,"studentId","taskId","participantId","guardianNameSnapshot",channel,
+      "noteHtml","noteText","purchaseIntentRating","notPurchasedReasons","occurredAt","createdBy")
+    VALUES (student_id||'-communication',student_id,participant_id||'-followup',participant_id,'Scenario Guardian '||i,'PHONE',
+      CASE WHEN i=8 THEN '<p>Attempted call; no answer.</p>' ELSE '<p>Discussed lesson times and next steps.</p>' END,
+      CASE WHEN i=8 THEN 'Attempted call; no answer.' ELSE 'Discussed lesson times and next steps.' END,
+      CASE WHEN i IN (6,7) THEN 3.5 END,
+      CASE WHEN i=9 THEN ARRAY[]::text[] WHEN i=8 THEN ARRAY['UNREACHABLE'] ELSE ARRAY['TIME'] END,now(),owner_id);
+    IF i<>9 THEN
+      INSERT INTO "Task" (id,type,"assigneeId","sessionId","participantId",purpose,"availableAt","dueAt","updatedAt")
+      VALUES (participant_id||'-report','STUDENT_AI_REPORT',owner_id,prefix||'session-1',participant_id,'POST_TRIAL_REVIEW',
+         now(),((local_day+1)+time '17:00') AT TIME ZONE 'Australia/Melbourne',now());
+      INSERT INTO "StudentAiReport" (id,"taskId","studentId","sourceFollowupTaskId","generationStatus",
+        content,"evidenceSnapshot","inputFingerprint",source,provider,model,"generatedAt","lastErrorCode")
+      VALUES (student_id||'-report',participant_id||'-report',student_id,participant_id||'-followup',
+        CASE WHEN i=6 THEN 'NOT_STARTED'::"ReportGenerationStatus" WHEN i=7 THEN 'READY'::"ReportGenerationStatus" ELSE 'FAILED'::"ReportGenerationStatus" END,
+        CASE WHEN i=7 THEN jsonb_build_object(
+         'overview','Fictional report fixture; not a real model result.',
+         'learningProfile',jsonb_build_object('summary','Practising fractions.','strengths',jsonb_build_array('Participation'),'needsAttention',jsonb_build_array('Fractions')),
+         'teacherEvaluation',jsonb_build_object('classroomPerformanceRating',4.5,'overallAbilityRating',3.5,'summary','Participates well.'),
+         'followup',jsonb_build_object('purchaseIntentRating',3.5,'reasons',jsonb_build_array('TIME'),'summary','Discuss lesson times.'),
+         'observations',jsonb_build_array(jsonb_build_object('text','Time is a stated concern.','sourceIds',jsonb_build_array('followup'))),
+         'questionsToConfirm',jsonb_build_array('Which lesson times suit the family?'),
+         'suggestedNextActions',jsonb_build_array('Confirm available times.')) END,
+        CASE WHEN i=7 THEN jsonb_build_array(jsonb_build_object('id','followup','text','Reason: TIME. Intent rating: 3.5.')) END,
+        CASE WHEN i=7 THEN 'fixture-v2' END,CASE WHEN i=7 THEN 'fixture' END,
+        CASE WHEN i=7 THEN 'fixture' END,CASE WHEN i=7 THEN 'fixture' END,
+        CASE WHEN i=7 THEN now() END,CASE WHEN i=8 THEN 'PROVIDER_TIMEOUT_FIXTURE' END);
+    END IF;
+  END LOOP;
+  UPDATE "Student" SET
+    "backgroundHtml"='<p>Enjoys visual examples and small-group learning.</p>',
+    "backgroundText"='Enjoys visual examples and small-group learning.',
+    "adminNotesHtml"='<p>Internal observation: confirm suitable lesson times.</p>',
+    "adminNotesText"='Internal observation: confirm suitable lesson times.'
+  WHERE id LIKE prefix||'%';
+
+  UPDATE "Task" t SET "sourceSnapshot"=jsonb_build_object(
+    'participantId',p.id,'studentId',p."studentId",'studentName',st.name,
+    'sessionId',p."sessionId",'classroomPerformanceRating',p."classroomPerformanceRating",
+    'overallAbilityRating',p."overallAbilityRating",'teacherNoteHtml',p."teacherNoteHtml",
+    'feedbackSubmittedAt',p."feedbackSubmittedAt")
+  FROM "SessionParticipant" p JOIN "Student" st ON st.id=p."studentId"
+  WHERE t."participantId"=p.id AND p."feedbackSubmittedAt" IS NOT NULL
+    AND t.id LIKE prefix||'%' AND t.type IN ('TRIAL_FEEDBACK','TRIAL_FOLLOWUP');
+
   -- This marker is written last in the same transaction; normal application edits are never reset.
   INSERT INTO "AccountAudit" (id,"actorId","targetUserId",action,reason,before,after,"requestKey")
-  VALUES (prefix||'complete',super_id,super_id,'DEMO_SEED','Development seed v1 completed','{}',
-    jsonb_build_object('admins',5,'teachers',20,'members',10,'trials',5,'regularCredits',10,'trialCredits',5,'sessions',3),gen_random_uuid()::text);
+  VALUES (prefix||'complete',super_id,super_id,'DEMO_SEED','Development seed v2 completed','{}',
+    jsonb_build_object('admins',5,'teachers',20,'members',11,'trials',8,'regularCredits',10,'trialCredits',5,'sessions',3),gen_random_uuid()::text);
 END
 $seed$;
 COMMIT;
 
 -- 执行结果：正数充值与签到扣课分开统计。
 SELECT 'super_admins_active' AS item,count(*) AS count FROM "User" WHERE "isSuperAdmin" AND status='ACTIVE'
-UNION ALL SELECT 'demo_admins',count(*) FROM "User" WHERE id LIKE 'launch-demo-v1-admin-%'
-UNION ALL SELECT 'demo_teachers',count(*) FROM "User" WHERE id LIKE 'launch-demo-v1-teacher-%'
-UNION ALL SELECT 'member_students',count(*) FROM "Student" WHERE id LIKE 'launch-demo-v1-member-%'
-UNION ALL SELECT 'trial_students',count(*) FROM "Student" WHERE id LIKE 'launch-demo-v1-trial-%'
-UNION ALL SELECT 'regular_purchases',count(*) FROM "EntitlementEntry" WHERE id LIKE 'launch-demo-v1-%' AND kind='PURCHASE'
-UNION ALL SELECT 'trial_grants',count(*) FROM "EntitlementEntry" WHERE id LIKE 'launch-demo-v1-%' AND kind='TRIAL_GRANT'
-UNION ALL SELECT 'sessions',count(*) FROM "ClassSession" WHERE id LIKE 'launch-demo-v1-%'
-UNION ALL SELECT 'admin_followups',count(*) FROM "Task" WHERE id LIKE 'launch-demo-v1-%' AND type='TRIAL_FOLLOWUP';
+UNION ALL SELECT 'demo_admins',count(*) FROM "User" WHERE id LIKE 'ai-demo-v2-admin-%'
+UNION ALL SELECT 'demo_teachers',count(*) FROM "User" WHERE id LIKE 'ai-demo-v2-teacher-%'
+UNION ALL SELECT 'member_students',count(*) FROM "Student" WHERE id LIKE 'ai-demo-v2-%' AND type='MEMBER'
+UNION ALL SELECT 'trial_students',count(*) FROM "Student" WHERE id LIKE 'ai-demo-v2-%' AND type='TRIAL'
+UNION ALL SELECT 'regular_purchases',count(*) FROM "EntitlementEntry" WHERE id LIKE 'ai-demo-v2-%' AND kind='PURCHASE'
+UNION ALL SELECT 'trial_grants',count(*) FROM "EntitlementEntry" WHERE id LIKE 'ai-demo-v2-%' AND kind='TRIAL_GRANT'
+UNION ALL SELECT 'sessions',count(*) FROM "ClassSession" WHERE id LIKE 'ai-demo-v2-%'
+UNION ALL SELECT 'admin_followups',count(*) FROM "Task" WHERE id LIKE 'ai-demo-v2-%' AND type='TRIAL_FOLLOWUP';
+
+SELECT "generationStatus", source, count(*) FROM "StudentAiReport" GROUP BY 1,2 ORDER BY 1;

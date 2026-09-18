@@ -84,7 +84,11 @@ export class AccountsService {
   async impactIn(tx: Tx, user: Actor, target: User): Promise<D.DeactivationImpactDto> {
     const ownedStudentCount = await tx.student.count({ where: { ownerAdminId: target.id } });
     const openFollowupCount = await tx.task.count({
-      where: { assigneeId: target.id, type: 'TRIAL_FOLLOWUP', status: 'OPEN' },
+      where: {
+        assigneeId: target.id,
+        type: { in: ['TRIAL_FOLLOWUP', 'STUDENT_AI_REPORT'] },
+        status: 'OPEN',
+      },
     });
     const now = this.clock.now();
     const blocking =
@@ -293,7 +297,7 @@ export class AccountsService {
               fail('INVALID_SUCCESSOR', 'Select an active administrator.');
             const inconsistent = await tx.task.count({
               where: {
-                type: 'TRIAL_FOLLOWUP',
+                type: { in: ['TRIAL_FOLLOWUP', 'STUDENT_AI_REPORT'] },
                 status: 'OPEN',
                 OR: [
                   { assigneeId: id, participant: { student: { ownerAdminId: { not: id } } } },
@@ -306,7 +310,11 @@ export class AccountsService {
               fail('HANDOVER_CONFLICT', 'Follow-up ownership must be corrected before handover.');
             transferredTaskCount = (
               await tx.task.updateMany({
-                where: { type: 'TRIAL_FOLLOWUP', status: 'OPEN', assigneeId: id },
+                where: {
+                  type: { in: ['TRIAL_FOLLOWUP', 'STUDENT_AI_REPORT'] },
+                  status: 'OPEN',
+                  assigneeId: id,
+                },
                 data: { assigneeId: successor.id, version: { increment: 1 } },
               })
             ).count;

@@ -35,6 +35,7 @@ import {
   IsEmail,
   IsIn,
   IsInt,
+  IsNumber,
   IsISO8601,
   IsOptional,
   IsString,
@@ -69,6 +70,8 @@ export class StudentQuery extends PageQuery {
   @O() @IsOptional() @IsBooleanString() mine?: string;
 }
 export class StudentFields {
+  @O() @IsOptional() @text(0, 50000) backgroundHtml?: string;
+  @O() @IsOptional() @text(0, 50000) adminNotesHtml?: string;
   @O() @IsOptional() @text(0, 120) guardianOccupation?: string;
   @O({ type: Number, minimum: 0, maximum: 120 })
   @IsOptional()
@@ -165,24 +168,30 @@ export class AddParticipantDto {
 }
 export class ParticipantFeedbackDto {
   @P() @IsInt() @Min(1) expectedVersion!: number;
-  @P({ maxLength: 2000 }) @text(1, 2000) feedback!: string;
-  @O({ maxLength: 2000 }) @IsOptional() @text(0, 2000) abilityNote?: string;
-  @O({ maxLength: 2000 }) @IsOptional() @text(0, 2000) preferenceNote?: string;
+  @P({ minimum: 1, maximum: 5, multipleOf: 0.5 })
+  @IsIn([1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5])
+  classroomPerformanceRating!: number;
+  @P({ minimum: 1, maximum: 5, multipleOf: 0.5 })
+  @IsIn([1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5])
+  overallAbilityRating!: number;
+  @O() @IsOptional() @text(0, 20000) teacherNoteHtml?: string;
 }
 export class CommunicationDto {
   @P() @text(1, 100) guardianNameSnapshot!: string;
   @O() @IsOptional() @text(0, 100) relationshipSnapshot?: string;
   @P({ enum: channels }) @IsIn(channels) channel!: string;
-  @P() @text(1, 2000) content!: string;
-  @O({ maxLength: 2000 }) @IsOptional() @text(0, 2000) concerns?: string;
-  @O({ maxLength: 1000 }) @IsOptional() @text(0, 1000) coreQuestion?: string;
-  @O({ enum: FOLLOWUP_REASON_TAGS, isArray: true, maxItems: 7, uniqueItems: true })
+  @O() @IsOptional() @text(0, 20000) noteHtml?: string;
+  @O({ type: Number, nullable: true, minimum: 1, maximum: 5, multipleOf: 0.5 })
+  @IsOptional()
+  @IsIn([1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5])
+  purchaseIntentRating?: number | null;
+  @O({ enum: FOLLOWUP_REASON_TAGS, isArray: true })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(7)
+  @ArrayMaxSize(9)
   @ArrayUnique()
   @IsIn(FOLLOWUP_REASON_TAGS, { each: true })
-  reasonTags?: FollowupReasonTag[];
+  notPurchasedReasons?: FollowupReasonTag[];
   @P() @IsISO8601({ strict: true }) occurredAt!: string;
   @O() @IsOptional() @text(1, 128) taskId?: string;
   @O() @IsOptional() @text(1, 128) participantId?: string;
@@ -287,9 +296,12 @@ export class ParticipantDto extends StudentDto {
   @P({ type: String, nullable: true, format: 'date-time' }) feedbackSubmittedAt!: string | null;
   @P() version!: number;
   @P() canManage!: boolean;
-  @P({ type: String, nullable: true }) feedback!: string | null;
-  @P({ type: String, nullable: true }) abilityNote!: string | null;
-  @P({ type: String, nullable: true }) preferenceNote!: string | null;
+  @P({ type: String, nullable: true }) gender!: string | null;
+  @P({ type: Number, nullable: true }) age!: number | null;
+  @P({ type: String, nullable: true }) backgroundHtml!: string | null;
+  @P({ type: Number, nullable: true }) classroomPerformanceRating!: number | null;
+  @P({ type: Number, nullable: true }) overallAbilityRating!: number | null;
+  @P({ type: String, nullable: true }) teacherNoteHtml!: string | null;
 }
 export class RosterDto {
   @P({ type: LessonDto }) lesson!: LessonDto;
@@ -307,9 +319,13 @@ export class TeachingRecordDto {
   })
   membershipCategory!: MembershipCategory;
   @P() attendance!: string;
-  @P({ type: String, nullable: true }) feedback!: string | null;
+  @P({ type: Number, nullable: true }) classroomPerformanceRating!: number | null;
+  @P({ type: Number, nullable: true }) overallAbilityRating!: number | null;
+  @P({ type: String, nullable: true }) teacherNoteHtml!: string | null;
 }
 export class StudentDetailDto extends StudentListItemDto {
+  @O({ type: String, nullable: true }) backgroundHtml?: string | null;
+  @O({ type: String, nullable: true }) adminNotesHtml?: string | null;
   @O({ type: StudentAdminViewDto, nullable: true }) recordedByAdmin?: StudentAdminViewDto | null;
   @O() guardianOccupation?: string;
   @O({ type: Number, nullable: true }) guardianAge?: number | null;
@@ -336,13 +352,11 @@ export class CommunicationViewDto {
   @P() studentId!: string;
   @P() guardianNameSnapshot!: string;
   @P() channel!: string;
-  @P() content!: string;
-  @P({ type: String, nullable: true }) concerns!: string | null;
-  @P({ type: String, nullable: true }) coreQuestion!: string | null;
-  @P({ enum: FOLLOWUP_REASON_TAGS, isArray: true }) reasonTags!: string[];
+  @P({ type: String, nullable: true }) noteHtml!: string | null;
+  @P({ type: Number, nullable: true }) purchaseIntentRating!: number | null;
+  @P({ enum: FOLLOWUP_REASON_TAGS, isArray: true }) notPurchasedReasons!: string[];
   @P() occurredAt!: string;
   @P() authorName!: string;
-  @P({ type: String, nullable: true }) outcome!: string | null;
 }
 export class CommunicationPageDto {
   @P({ type: [CommunicationViewDto] }) items!: CommunicationViewDto[];
@@ -385,10 +399,10 @@ export class TaskDto {
   @P({ type: String, nullable: true }) feedbackSubmittedAt!: string | null;
   @P({
     type: 'object',
-    additionalProperties: { type: 'string' },
+    additionalProperties: { oneOf: [{ type: 'string' }, { type: 'number' }] },
     description: 'Whitelisted teaching snapshot; excludes guardian and financial data.',
   })
-  sourceSnapshot!: Record<string, string>;
+  sourceSnapshot!: Record<string, string | number>;
   @P() id!: string;
   @P({ enum: TASK_TYPES }) type!: TaskType;
   @P({ enum: TASK_STATUSES }) status!: TaskStatus;
@@ -440,4 +454,25 @@ export class SuggestionDto {
   @P() generatedAt!: string;
   @P({ type: [String] }) inputRecordIds!: string[];
   @P({ type: [EvidenceDto] }) evidence!: EvidenceDto[];
+}
+
+export class ReportVersionDto {
+  @P() @IsInt() @Min(1) expectedVersion!: number;
+}
+export class ReportDto {
+  @P() id!: string;
+  @P() taskId!: string;
+  @P() sourceFollowupTaskId!: string;
+  @P() version!: number;
+  @P({ enum: ['NOT_STARTED', 'READY', 'FAILED'] }) generationStatus!: string;
+  @P({ type: String, nullable: true }) source!: string | null;
+  @P({ type: String, nullable: true }) model!: string | null;
+  @P({ type: String, nullable: true }) generatedAt!: string | null;
+  @P({ type: String, nullable: true }) lastErrorCode!: string | null;
+  @P() stale!: boolean;
+  @P({ type: 'object', additionalProperties: true, nullable: true }) content!: Record<
+    string,
+    unknown
+  > | null;
+  @P({ type: [EvidenceDto], nullable: true }) evidenceSnapshot!: EvidenceDto[] | null;
 }

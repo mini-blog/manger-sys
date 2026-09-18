@@ -12,7 +12,6 @@ import {
   type Tx,
 } from '../common/domain';
 import { PrismaService } from '../prisma.service';
-import { closeFirstPurchase } from './followup-policy';
 import { ownedStudent } from './read.service';
 import { membership } from './membership';
 import type { Prisma } from '../generated/prisma/client';
@@ -188,7 +187,7 @@ export class EntitlementsService {
         version: { increment: 1 },
       },
     });
-    const closedTaskIds = await closeFirstPurchase(tx, input.studentId, entry.id, input.now);
+    const closedTaskIds: string[] = []; // Purchase does not replace the advisor’s follow-up.
     return { entry, closedTaskIds };
   }
   private async entryDto(tx: Tx, id: string): Promise<D.EntryDto> {

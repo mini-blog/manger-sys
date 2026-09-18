@@ -2,6 +2,8 @@ import { BUSINESS_TIMEZONE } from '@student/common';
 import { config } from 'dotenv';
 import { resolve } from 'node:path';
 
+// Explicit process/container environment always takes precedence over local files.
+config({ path: resolve(__dirname, '../../../env.local'), quiet: true });
 config({ path: resolve(__dirname, '../../../.env'), quiet: true });
 
 export const settings = {

@@ -51,46 +51,12 @@ export async function ensureFirstPurchaseFollowup(tx: Tx, participantId: string,
         startsAt: l.startsAt,
         endsAt: l.endsAt,
         checkedInAt: p.checkedInAt,
-        feedback: p.feedback,
-        abilityNote: p.abilityNote,
-        preferenceNote: p.preferenceNote,
+        classroomPerformanceRating: Number(p.classroomPerformanceRating),
+        overallAbilityRating: Number(p.overallAbilityRating),
+        teacherNoteHtml: p.teacherNoteHtml,
         feedbackSubmittedAt: p.feedbackSubmittedAt,
         membershipCategory: p.membershipCategorySnapshot,
       }),
     },
   });
-}
-export async function closeFirstPurchase(tx: Tx, studentId: string, entryId: string, now: Date) {
-  const entry = required(await tx.entitlementEntry.findUnique({ where: { id: entryId } }));
-  if (entry.studentId !== studentId || entry.bucket !== 'REGULAR' || entry.kind !== 'PURCHASE')
-    bad('Only this student’s purchase can resolve first-purchase follow-ups.');
-  const student = required(await tx.student.findUnique({ where: { id: studentId } }));
-  const tasks = await tx.task.findMany({
-    where: {
-      type: 'TRIAL_FOLLOWUP',
-      purpose: 'FIRST_PURCHASE',
-      status: 'OPEN',
-      participant: { studentId },
-    },
-    include: { participant: true },
-  });
-  if (
-    tasks.some(
-      (t) => t.assigneeId !== student.ownerAdminId || t.sessionId !== t.participant?.sessionId,
-    )
-  )
-    fail('FOLLOWUP_DATA_INVALID', 'Follow-up ownership or source needs reconciliation.');
-  const ids = tasks.map((t) => t.id);
-  await tx.task.updateMany({
-    where: { id: { in: ids } },
-    data: {
-      status: 'DONE',
-      reason: 'PURCHASE_RECORDED',
-      followupOutcome: 'PURCHASE_RECORDED',
-      completedAt: now,
-      resolvedByEntitlementEntryId: entryId,
-      version: { increment: 1 },
-    },
-  });
-  return ids;
 }

@@ -40,7 +40,7 @@ WEB_PORT=80
 # Temporary IP-based HTTP deployment; change to true when HTTPS is configured.
 SESSION_COOKIE_SECURE=false
 ACCOUNT_COMMAND_HASH_SECRET=$account_secret
-QWEN_API_KEY=
+QIWEN_API_KEY=
 QWEN_BASE_URL=
 QWEN_MODEL=
 EOF
@@ -50,8 +50,25 @@ EOF
   echo 'Created server-only .env.prod (HTTP preview configuration).'
 fi
 
+# AI credentials rotate independently of the database credentials. The release copy
+# is temporary; only root may read the persistent runtime file.
+ai_env_file="$deploy_root/.env.ai"
+if [[ -f "$release_dir/ai.env" ]]; then
+  for name in QIWEN_API_KEY QWEN_BASE_URL QWEN_MODEL; do
+    grep -q "^${name}='[^']\+'$" "$release_dir/ai.env" || {
+      echo "Missing AI deployment setting: $name"; exit 1;
+    }
+  done
+  ai_tmp=$(mktemp "$deploy_root/.env.ai.XXXXXX")
+  install -m 600 "$release_dir/ai.env" "$ai_tmp"
+  mv "$ai_tmp" "$ai_env_file"
+  rm -f "$release_dir/ai.env"
+fi
+
 export IMAGE_TAG="$image_tag"
-compose=(docker compose --project-name studentsys-prod --env-file "$env_file" -f "$release_dir/compose.prod.yaml")
+compose=(docker compose --project-name studentsys-prod --env-file "$env_file")
+if [[ -f "$ai_env_file" ]]; then compose+=(--env-file "$ai_env_file"); fi
+compose+=(-f "$release_dir/compose.prod.yaml")
 "${compose[@]}" config --quiet
 gzip -dc images.tar.gz | docker load
 # The compressed upload is expendable; keep Docker images and release files for diagnosis.

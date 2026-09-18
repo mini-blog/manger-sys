@@ -1,3 +1,4 @@
+import { richText } from '../common/rich-text';
 import { Injectable } from '@nestjs/common';
 import { isEmail } from 'class-validator';
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
@@ -53,7 +54,16 @@ export class StudentsService {
       if (!phone?.isValid()) bad('Enter a valid international or Australian phone number.');
       fields.guardianPhone = phone.number;
     }
-    return fields;
+    const rich: Record<string, string | null> = {};
+    for (const field of ['background', 'adminNotes'] as const) {
+      const html = fields[`${field}Html`];
+      if (html !== undefined) {
+        const value = richText(html);
+        rich[`${field}Html`] = value.html;
+        rich[`${field}Text`] = value.text;
+      }
+    }
+    return { ...fields, ...rich };
   }
   create(user: Actor, body: D.CreateStudentDto, key?: string) {
     admin(user);
@@ -121,7 +131,7 @@ export class StudentsService {
       },
     );
   }
-  async log(tx: Tx, user: Actor, studentId: string, body: D.CommunicationDto, outcome?: string) {
+  async log(tx: Tx, user: Actor, studentId: string, body: D.CommunicationDto) {
     const s = await ownedStudent(tx, user, studentId);
     contactReady(s, body.channel);
     const occurred = instant(body.occurredAt);
@@ -146,18 +156,20 @@ export class StudentsService {
         guardianNameSnapshot: body.guardianNameSnapshot,
         relationshipSnapshot: body.relationshipSnapshot || null,
         channel: body.channel,
-        content: body.content,
-        concerns: body.concerns || null,
-        coreQuestion: body.coreQuestion || null,
-        reasonTags: body.reasonTags ?? [],
+        noteHtml: richText(body.noteHtml, 2000).html,
+        noteText: richText(body.noteHtml, 2000).text,
+        purchaseIntentRating: body.purchaseIntentRating,
+        notPurchasedReasons: body.notPurchasedReasons ?? [],
         occurredAt: occurred,
         taskId: body.taskId,
         participantId: body.participantId,
-        outcome,
       },
     });
   }
   communicate(user: Actor, id: string, body: D.CommunicationDto, key?: string) {
+    if (!richText(body.noteHtml, 2000).text) bad('A communication note is required.');
+    if (body.taskId || body.purchaseIntentRating != null || body.notPurchasedReasons?.length)
+      bad('Use the follow-up task to record a purchase outcome.');
     return this.commands.run(
       user,
       `students:${id}:communicate`,

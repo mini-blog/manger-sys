@@ -41,6 +41,7 @@ jobs:
         run: |
           DEPLOY_TEST_IMAGE="studentsys-db:$IMAGE_TAG" node scripts/test-database-image.mjs
           DEPLOY_TEST_IMAGE="studentsys-db:$IMAGE_TAG" node scripts/test-deploy-server.mjs
+          DEPLOY_TEST_IMAGE="studentsys-db:$IMAGE_TAG" node scripts/test-reset-database.mjs
 
       - name: Package images and deployment files
         run: |
@@ -81,6 +82,24 @@ jobs:
         run: |
           ssh studentsys-deploy "sudo -n install -d -m 755 /opt/studentsys && sudo -n install -d -o admin -g admin -m 700 /opt/studentsys/releases/$RELEASE_ID"
           scp release/* "studentsys-deploy:/opt/studentsys/releases/$RELEASE_ID/"
+
+      - name: Transfer backend AI environment
+        env:
+          QIWEN_API_KEY: ${{ secrets.QIWEN_API_KEY }}
+          QWEN_BASE_URL: ${{ vars.QWEN_BASE_URL || 'https://dashscope.aliyuncs.com/compatible-mode/v1' }}
+          QWEN_MODEL: ${{ vars.QWEN_MODEL || 'qwen3.8-flash' }}
+        run: |
+          # Stream secrets over SSH stdin, never into command arguments or image layers.
+          python3 - <<'PY' | ssh studentsys-deploy "umask 077; cat > /opt/studentsys/releases/$RELEASE_ID/ai.env"
+          import os, sys
+          names = ('QIWEN_API_KEY', 'QWEN_BASE_URL', 'QWEN_MODEL')
+          values = {name: os.environ.get(name, '') for name in names}
+          for name, value in values.items():
+              if not value or any(c in value for c in "\r\n'\\"):
+                  sys.exit('Missing or invalid deployment setting: ' + name)
+          for name, value in values.items():
+              print(name + "='" + value + "'")
+          PY
 
       - name: Start services
         run: |

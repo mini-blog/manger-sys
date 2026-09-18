@@ -1,3 +1,4 @@
+import { RichText } from './RichText';
 import { GUARDIAN_GENDERS, COMMUNICATION_CHANNELS } from '@student/common';
 import type { components } from '@student/common/api';
 import { Box, MenuItem, TextField, Typography } from '@mui/material';
@@ -6,6 +7,8 @@ import { label } from './FormParts';
 type Detail = components['schemas']['StudentDetailDto'];
 export function guardianFormFrom(student?: Detail) {
   return {
+    backgroundHtml: student?.backgroundHtml ?? '',
+    adminNotesHtml: student?.adminNotesHtml ?? '',
     guardianName: student?.guardianName ?? '',
     guardianRelationship: student?.guardianRelationship ?? '',
     guardianOccupation: student?.guardianOccupation ?? '',
@@ -127,6 +130,24 @@ export function GuardianFields({
         sx={{ gridColumn: '1 / -1' }}
         slotProps={{ htmlInput: { maxLength: 1000 } }}
       />
+      <Box sx={{ gridColumn: '1 / -1' }}>
+        <RichText
+          label="Basic information · visible to teachers"
+          value={value.backgroundHtml}
+          onChange={(v) => set('backgroundHtml', v)}
+          max={5000}
+          disabled={disabled}
+        />
+      </Box>
+      <Box sx={{ gridColumn: '1 / -1' }}>
+        <RichText
+          label="Admin notes · responsible admin only"
+          value={value.adminNotesHtml}
+          onChange={(v) => set('adminNotesHtml', v)}
+          max={5000}
+          disabled={disabled}
+        />
+      </Box>
     </Box>
   );
 }

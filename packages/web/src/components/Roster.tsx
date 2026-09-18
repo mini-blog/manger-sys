@@ -1,3 +1,5 @@
+import { StudentBackground } from './StudentBackground';
+import { RichView } from './RichText';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -313,7 +315,12 @@ function ParticipantCard({ p, future }: { p: Participant; future: boolean }) {
           {p.yearLevel}
           {p.attendance !== 'PENDING' ? ` · ${label(p.attendance)}` : ''}
         </Typography>
-        {p.feedback && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{p.feedback}</Typography>}
+        <RichView html={p.teacherNoteHtml} />
+        <Typography variant="body2">
+          {p.gender ? label(p.gender) : 'Gender not provided'} ·{' '}
+          {p.age == null ? 'Age not provided' : `Age ${p.age}`}
+        </Typography>
+        <StudentBackground key={p.participantId} name={p.name} html={p.backgroundHtml} />
         {canRemove && !removing && (
           <Button
             color="error"

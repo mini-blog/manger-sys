@@ -114,6 +114,32 @@ try {
     'repeat deployment preserves secrets',
   );
 
+  const aiSettings =
+    "QIWEN_API_KEY='fictional-deploy-key'\nQWEN_BASE_URL='https://example.test/v1'\nQWEN_MODEL='test-model'\n";
+  const aiRelease = pack();
+  writeFileSync(join(aiRelease, 'ai.env'), aiSettings);
+  const aiDeployment = run();
+  assert.equal(aiDeployment.status, 0, aiDeployment.stderr);
+  assert.equal(readFileSync(join(root, '.env.ai'), 'utf8'), aiSettings);
+  assert.equal(statSync(join(root, '.env.ai')).mode & 0o777, 0o600);
+  assert.equal(existsSync(join(aiRelease, 'ai.env')), false);
+  assert.equal(readFileSync(join(root, '.env.prod'), 'utf8'), env);
+  assert.match(
+    readFileSync(join(root, 'commands.log'), 'utf8'),
+    /--env-file \/opt\/studentsys\/\.env.ai/,
+  );
+  assert.doesNotMatch(aiDeployment.stdout + aiDeployment.stderr, /fictional-deploy-key/);
+  pack();
+  assert.equal(run().status, 0);
+  assert.equal(readFileSync(join(root, '.env.ai'), 'utf8'), aiSettings);
+  pack();
+  writeFileSync(
+    join(aiRelease, 'ai.env'),
+    aiSettings.replace('fictional-deploy-key', 'rotated-test-key'),
+  );
+  assert.equal(run().status, 0);
+  assert.match(readFileSync(join(root, '.env.ai'), 'utf8'), /rotated-test-key/);
+
   reset();
   writeFileSync(join(root, 'existing-volume'), '');
   assert.notEqual(run().status, 0, 'existing DB without environment must fail');
@@ -135,7 +161,7 @@ try {
   assert.notEqual(run().status, 0, 'corrupt archive must fail before environment/database changes');
   assert.equal(existsSync(join(root, '.env.prod')), false);
   console.log(
-    'Deployment script passed: initialization, repeat release, missing environment, database failure, health failure, corrupt upload; no migration commands (simulated Docker CLI).',
+    'Deployment script passed: initialization, repeat release, AI secret injection/rotation/permissions, missing environment, database failure, health failure, corrupt upload; no migration commands (simulated Docker CLI).',
   );
 } finally {
   rmSync(dir, { recursive: true, force: true });

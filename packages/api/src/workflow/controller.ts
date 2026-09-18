@@ -190,11 +190,25 @@ export class WorkflowController {
   ) {
     return this.tasks.followUp(r.auth.user, id, b, k);
   }
-  @Post('tasks/:id/suggestions') @ApiCreatedResponse({ type: D.SuggestionDto }) suggest(
+  @Get('tasks/:id/report')
+  @ApiOkResponse({ type: D.ReportDto })
+  report(@Req() r: AuthRequest, @Param('id') id: string) {
+    return this.ai.view(r.auth.user, id);
+  }
+  @Post('tasks/:id/report/generate')
+  @ApiCreatedResponse({ type: D.ReportDto })
+  generateReport(@Req() r: AuthRequest, @Param('id') id: string, @Body() b: D.ReportVersionDto) {
+    return this.ai.generate(r.auth.user, id, b);
+  }
+  @Post('tasks/:id/report/complete')
+  @write()
+  @ApiCreatedResponse({ type: D.ActionDto })
+  completeReport(
     @Req() r: AuthRequest,
     @Param('id') id: string,
-    @Body() b: D.SuggestionRequest,
+    @Body() b: D.ReportVersionDto,
+    @Headers('idempotency-key') k?: string,
   ) {
-    return this.ai.suggest(r.auth.user, id, b);
+    return this.ai.complete(r.auth.user, id, b, k);
   }
 }

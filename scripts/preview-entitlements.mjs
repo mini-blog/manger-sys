@@ -78,7 +78,7 @@ try {
     API_PROXY_TARGET: `http://127.0.0.1:${apiPort}`,
     NODE_ENV: 'development',
     SESSION_COOKIE_SECURE: 'false',
-    QWEN_API_KEY: '',
+    QIWEN_API_KEY: '',
     ACCOUNT_COMMAND_HASH_SECRET: randomUUID() + randomUUID(),
   };
   for (const args of [['--filter', '@student/api...', 'build'], ['db:init']]) {

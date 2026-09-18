@@ -388,7 +388,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tasks/{id}/suggestions": {
+    "/api/tasks/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["WorkflowController_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{id}/report/generate": {
         parameters: {
             query?: never;
             header?: never;
@@ -397,7 +413,23 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["WorkflowController_suggest"];
+        post: operations["WorkflowController_generateReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{id}/report/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["WorkflowController_completeReport"];
         delete?: never;
         options?: never;
         head?: never;
@@ -612,6 +644,8 @@ export interface components {
             pageSize: number;
         };
         CreateStudentDto: {
+            backgroundHtml?: string;
+            adminNotesHtml?: string;
             guardianOccupation?: string;
             guardianAge?: number;
             /** @enum {string} */
@@ -669,7 +703,9 @@ export interface components {
              */
             membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
             attendance: string;
-            feedback: string | null;
+            classroomPerformanceRating: number | null;
+            overallAbilityRating: number | null;
+            teacherNoteHtml: string | null;
         };
         StudentDetailDto: {
             id: string;
@@ -682,6 +718,8 @@ export interface components {
             responsibleAdmin?: components["schemas"]["StudentAdminViewDto"];
             /** @enum {string} */
             membershipCategory: "TRIAL_STUDENT" | "NEW_MEMBER" | "MEMBER";
+            backgroundHtml?: string | null;
+            adminNotesHtml?: string | null;
             recordedByAdmin?: components["schemas"]["StudentAdminViewDto"] | null;
             guardianOccupation?: string;
             guardianAge?: number | null;
@@ -704,6 +742,8 @@ export interface components {
             teachingRecords: components["schemas"]["TeachingRecordDto"][];
         };
         UpdateStudentDto: {
+            backgroundHtml?: string;
+            adminNotesHtml?: string;
             guardianOccupation?: string;
             guardianAge?: number;
             /** @enum {string} */
@@ -738,13 +778,11 @@ export interface components {
             studentId: string;
             guardianNameSnapshot: string;
             channel: string;
-            content: string;
-            concerns: string | null;
-            coreQuestion: string | null;
-            reasonTags: ("PRICE" | "TIME" | "COURSE_FIT" | "TEACHING_FIT" | "CHILD_INTEREST" | "FAMILY_PLAN" | "OTHER")[];
+            noteHtml: string | null;
+            purchaseIntentRating: number | null;
+            notPurchasedReasons: ("PRICE" | "TIME" | "COURSE_FIT" | "TEACHING_FIT" | "CHILD_INTEREST" | "FAMILY_PLAN" | "OTHER" | "COMPARING" | "UNREACHABLE")[];
             occurredAt: string;
             authorName: string;
-            outcome: string | null;
         };
         CommunicationPageDto: {
             items: components["schemas"]["CommunicationViewDto"][];
@@ -757,10 +795,9 @@ export interface components {
             relationshipSnapshot?: string;
             /** @enum {string} */
             channel: "EMAIL" | "PHONE" | "SMS" | "WECHAT" | "IN_PERSON";
-            content: string;
-            concerns?: string;
-            coreQuestion?: string;
-            reasonTags?: ("PRICE" | "TIME" | "COURSE_FIT" | "TEACHING_FIT" | "CHILD_INTEREST" | "FAMILY_PLAN" | "OTHER")[];
+            noteHtml?: string;
+            purchaseIntentRating?: number | null;
+            notPurchasedReasons?: ("PRICE" | "TIME" | "COURSE_FIT" | "TEACHING_FIT" | "CHILD_INTEREST" | "FAMILY_PLAN" | "OTHER" | "COMPARING" | "UNREACHABLE")[];
             occurredAt: string;
             taskId?: string;
             participantId?: string;
@@ -823,9 +860,12 @@ export interface components {
             feedbackSubmittedAt: string | null;
             version: number;
             canManage: boolean;
-            feedback: string | null;
-            abilityNote: string | null;
-            preferenceNote: string | null;
+            gender: string | null;
+            age: number | null;
+            backgroundHtml: string | null;
+            classroomPerformanceRating: number | null;
+            overallAbilityRating: number | null;
+            teacherNoteHtml: string | null;
         };
         RosterDto: {
             lesson: components["schemas"]["LessonDto"];
@@ -842,9 +882,9 @@ export interface components {
         };
         ParticipantFeedbackDto: {
             expectedVersion: number;
-            feedback: string;
-            abilityNote?: string;
-            preferenceNote?: string;
+            classroomPerformanceRating: number;
+            overallAbilityRating: number;
+            teacherNoteHtml?: string;
         };
         CheckInDto: {
             expectedVersion: number;
@@ -889,15 +929,15 @@ export interface components {
             feedbackSubmittedAt: string | null;
             /** @description Whitelisted teaching snapshot; excludes guardian and financial data. */
             sourceSnapshot: {
-                [key: string]: string;
+                [key: string]: string | number;
             };
             id: string;
             /** @enum {string} */
-            type: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+            type: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK" | "STUDENT_AI_REPORT";
             /** @enum {string} */
             status: "OPEN" | "DONE" | "CANCELLED";
             /** @enum {string|null} */
-            followupOutcome: "PURCHASE_RECORDED" | "INTERESTED" | "CONSIDERING" | "NOT_INTERESTED" | "UNREACHABLE" | null;
+            followupOutcome: "PURCHASE_RECORDED" | "NOT_PURCHASED" | null;
             version: number;
             sessionId: string;
             participantId: string | null;
@@ -929,15 +969,15 @@ export interface components {
             feedbackSubmittedAt: string | null;
             /** @description Whitelisted teaching snapshot; excludes guardian and financial data. */
             sourceSnapshot: {
-                [key: string]: string;
+                [key: string]: string | number;
             };
             id: string;
             /** @enum {string} */
-            type: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+            type: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK" | "STUDENT_AI_REPORT";
             /** @enum {string} */
             status: "OPEN" | "DONE" | "CANCELLED";
             /** @enum {string|null} */
-            followupOutcome: "PURCHASE_RECORDED" | "INTERESTED" | "CONSIDERING" | "NOT_INTERESTED" | "UNREACHABLE" | null;
+            followupOutcome: "PURCHASE_RECORDED" | "NOT_PURCHASED" | null;
             version: number;
             sessionId: string;
             participantId: string | null;
@@ -960,34 +1000,31 @@ export interface components {
             expectedVersion: number;
             communication: components["schemas"]["CommunicationDto"];
             /** @enum {string} */
-            outcome: "INTERESTED" | "CONSIDERING" | "NOT_INTERESTED" | "UNREACHABLE";
-        };
-        SuggestionRequest: {
-            /** @enum {string} */
-            channel: "EMAIL" | "PHONE" | "SMS" | "WECHAT" | "IN_PERSON";
-            /** @enum {string} */
-            language: "en-AU" | "zh-CN";
-        };
-        ObservationDto: {
-            text: string;
-            sourceIds: string[];
+            outcome: "PURCHASED" | "NOT_PURCHASED";
         };
         EvidenceDto: {
             id: string;
             text: string;
         };
-        SuggestionDto: {
-            summary: string;
-            observations: components["schemas"]["ObservationDto"][];
-            questions: string[];
-            suggestedNextStep: string;
-            talkingPoints: string[];
-            subject: string | null;
-            messageDraft: string | null;
-            source: string;
-            generatedAt: string;
-            inputRecordIds: string[];
-            evidence: components["schemas"]["EvidenceDto"][];
+        ReportDto: {
+            id: string;
+            taskId: string;
+            sourceFollowupTaskId: string;
+            version: number;
+            /** @enum {string} */
+            generationStatus: "NOT_STARTED" | "READY" | "FAILED";
+            source: string | null;
+            model: string | null;
+            generatedAt: string | null;
+            lastErrorCode: string | null;
+            stale: boolean;
+            content: {
+                [key: string]: unknown;
+            } | null;
+            evidenceSnapshot: components["schemas"]["EvidenceDto"][] | null;
+        };
+        ReportVersionDto: {
+            expectedVersion: number;
         };
         TrialGrantDto: {
             studentId: string;
@@ -1818,7 +1855,7 @@ export interface operations {
                 pageSize?: number;
                 q?: string;
                 status?: "OPEN" | "DONE" | "CANCELLED";
-                type?: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK";
+                type?: "TRIAL_FOLLOWUP" | "TRIAL_FEEDBACK" | "STUDENT_AI_REPORT";
                 overdue?: string;
             };
             header?: never;
@@ -1886,7 +1923,28 @@ export interface operations {
             };
         };
     };
-    WorkflowController_suggest: {
+    WorkflowController_report: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportDto"];
+                };
+            };
+        };
+    };
+    WorkflowController_generateReport: {
         parameters: {
             query?: never;
             header?: never;
@@ -1897,7 +1955,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SuggestionRequest"];
+                "application/json": components["schemas"]["ReportVersionDto"];
             };
         };
         responses: {
@@ -1906,7 +1964,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SuggestionDto"];
+                    "application/json": components["schemas"]["ReportDto"];
+                };
+            };
+        };
+    };
+    WorkflowController_completeReport: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description UUID retained when retrying identical input. */
+                "idempotency-key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportVersionDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionDto"];
                 };
             };
         };

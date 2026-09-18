@@ -1386,7 +1386,8 @@
               "type": "string",
               "enum": [
                 "TRIAL_FOLLOWUP",
-                "TRIAL_FEEDBACK"
+                "TRIAL_FEEDBACK",
+                "STUDENT_AI_REPORT"
               ]
             }
           },
@@ -1510,9 +1511,44 @@
         ]
       }
     },
-    "/api/tasks/{id}/suggestions": {
+    "/api/tasks/{id}/report": {
+      "get": {
+        "operationId": "WorkflowController_report",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/tasks/{id}/report/generate": {
       "post": {
-        "operationId": "WorkflowController_suggest",
+        "operationId": "WorkflowController_generateReport",
         "parameters": [
           {
             "name": "id",
@@ -1528,7 +1564,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SuggestionRequest"
+                "$ref": "#/components/schemas/ReportVersionDto"
               }
             }
           }
@@ -1539,7 +1575,61 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuggestionDto"
+                  "$ref": "#/components/schemas/ReportDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie": []
+          }
+        ],
+        "tags": [
+          "Workflow"
+        ]
+      }
+    },
+    "/api/tasks/{id}/report/complete": {
+      "post": {
+        "operationId": "WorkflowController_completeReport",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "idempotency-key",
+            "required": true,
+            "in": "header",
+            "description": "UUID retained when retrying identical input.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActionDto"
                 }
               }
             }
@@ -2339,6 +2429,12 @@
       "CreateStudentDto": {
         "type": "object",
         "properties": {
+          "backgroundHtml": {
+            "type": "string"
+          },
+          "adminNotesHtml": {
+            "type": "string"
+          },
           "guardianOccupation": {
             "type": "string"
           },
@@ -2555,7 +2651,15 @@
           "attendance": {
             "type": "string"
           },
-          "feedback": {
+          "classroomPerformanceRating": {
+            "type": "number",
+            "nullable": true
+          },
+          "overallAbilityRating": {
+            "type": "number",
+            "nullable": true
+          },
+          "teacherNoteHtml": {
             "type": "string",
             "nullable": true
           }
@@ -2566,7 +2670,9 @@
           "category",
           "membershipCategory",
           "attendance",
-          "feedback"
+          "classroomPerformanceRating",
+          "overallAbilityRating",
+          "teacherNoteHtml"
         ]
       },
       "StudentDetailDto": {
@@ -2606,6 +2712,14 @@
               "NEW_MEMBER",
               "MEMBER"
             ]
+          },
+          "backgroundHtml": {
+            "type": "string",
+            "nullable": true
+          },
+          "adminNotesHtml": {
+            "type": "string",
+            "nullable": true
           },
           "recordedByAdmin": {
             "nullable": true,
@@ -2697,6 +2811,12 @@
       "UpdateStudentDto": {
         "type": "object",
         "properties": {
+          "backgroundHtml": {
+            "type": "string"
+          },
+          "adminNotesHtml": {
+            "type": "string"
+          },
           "guardianOccupation": {
             "type": "string"
           },
@@ -2833,18 +2953,15 @@
           "channel": {
             "type": "string"
           },
-          "content": {
-            "type": "string"
-          },
-          "concerns": {
+          "noteHtml": {
             "type": "string",
             "nullable": true
           },
-          "coreQuestion": {
-            "type": "string",
+          "purchaseIntentRating": {
+            "type": "number",
             "nullable": true
           },
-          "reasonTags": {
+          "notPurchasedReasons": {
             "type": "array",
             "items": {
               "type": "string",
@@ -2855,7 +2972,9 @@
                 "TEACHING_FIT",
                 "CHILD_INTEREST",
                 "FAMILY_PLAN",
-                "OTHER"
+                "OTHER",
+                "COMPARING",
+                "UNREACHABLE"
               ]
             }
           },
@@ -2864,10 +2983,6 @@
           },
           "authorName": {
             "type": "string"
-          },
-          "outcome": {
-            "type": "string",
-            "nullable": true
           }
         },
         "required": [
@@ -2875,13 +2990,11 @@
           "studentId",
           "guardianNameSnapshot",
           "channel",
-          "content",
-          "concerns",
-          "coreQuestion",
-          "reasonTags",
+          "noteHtml",
+          "purchaseIntentRating",
+          "notPurchasedReasons",
           "occurredAt",
-          "authorName",
-          "outcome"
+          "authorName"
         ]
       },
       "CommunicationPageDto": {
@@ -2929,21 +3042,18 @@
               "IN_PERSON"
             ]
           },
-          "content": {
+          "noteHtml": {
             "type": "string"
           },
-          "concerns": {
-            "type": "string",
-            "maxLength": 2000
+          "purchaseIntentRating": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 5,
+            "multipleOf": 0.5
           },
-          "coreQuestion": {
-            "type": "string",
-            "maxLength": 1000
-          },
-          "reasonTags": {
+          "notPurchasedReasons": {
             "type": "array",
-            "maxItems": 7,
-            "uniqueItems": true,
             "items": {
               "type": "string",
               "enum": [
@@ -2953,7 +3063,9 @@
                 "TEACHING_FIT",
                 "CHILD_INTEREST",
                 "FAMILY_PLAN",
-                "OTHER"
+                "OTHER",
+                "COMPARING",
+                "UNREACHABLE"
               ]
             }
           },
@@ -2970,7 +3082,6 @@
         "required": [
           "guardianNameSnapshot",
           "channel",
-          "content",
           "occurredAt"
         ]
       },
@@ -3161,15 +3272,27 @@
           "canManage": {
             "type": "boolean"
           },
-          "feedback": {
+          "gender": {
             "type": "string",
             "nullable": true
           },
-          "abilityNote": {
+          "age": {
+            "type": "number",
+            "nullable": true
+          },
+          "backgroundHtml": {
             "type": "string",
             "nullable": true
           },
-          "preferenceNote": {
+          "classroomPerformanceRating": {
+            "type": "number",
+            "nullable": true
+          },
+          "overallAbilityRating": {
+            "type": "number",
+            "nullable": true
+          },
+          "teacherNoteHtml": {
             "type": "string",
             "nullable": true
           }
@@ -3191,9 +3314,12 @@
           "feedbackSubmittedAt",
           "version",
           "canManage",
-          "feedback",
-          "abilityNote",
-          "preferenceNote"
+          "gender",
+          "age",
+          "backgroundHtml",
+          "classroomPerformanceRating",
+          "overallAbilityRating",
+          "teacherNoteHtml"
         ]
       },
       "RosterDto": {
@@ -3247,22 +3373,26 @@
           "expectedVersion": {
             "type": "number"
           },
-          "feedback": {
-            "type": "string",
-            "maxLength": 2000
+          "classroomPerformanceRating": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5,
+            "multipleOf": 0.5
           },
-          "abilityNote": {
-            "type": "string",
-            "maxLength": 2000
+          "overallAbilityRating": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5,
+            "multipleOf": 0.5
           },
-          "preferenceNote": {
-            "type": "string",
-            "maxLength": 2000
+          "teacherNoteHtml": {
+            "type": "string"
           }
         },
         "required": [
           "expectedVersion",
-          "feedback"
+          "classroomPerformanceRating",
+          "overallAbilityRating"
         ]
       },
       "CheckInDto": {
@@ -3425,7 +3555,14 @@
           "sourceSnapshot": {
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
             },
             "description": "Whitelisted teaching snapshot; excludes guardian and financial data."
           },
@@ -3436,7 +3573,8 @@
             "type": "string",
             "enum": [
               "TRIAL_FOLLOWUP",
-              "TRIAL_FEEDBACK"
+              "TRIAL_FEEDBACK",
+              "STUDENT_AI_REPORT"
             ]
           },
           "status": {
@@ -3451,10 +3589,7 @@
             "type": "string",
             "enum": [
               "PURCHASE_RECORDED",
-              "INTERESTED",
-              "CONSIDERING",
-              "NOT_INTERESTED",
-              "UNREACHABLE"
+              "NOT_PURCHASED"
             ],
             "nullable": true
           },
@@ -3594,7 +3729,14 @@
           "sourceSnapshot": {
             "type": "object",
             "additionalProperties": {
-              "type": "string"
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                }
+              ]
             },
             "description": "Whitelisted teaching snapshot; excludes guardian and financial data."
           },
@@ -3605,7 +3747,8 @@
             "type": "string",
             "enum": [
               "TRIAL_FOLLOWUP",
-              "TRIAL_FEEDBACK"
+              "TRIAL_FEEDBACK",
+              "STUDENT_AI_REPORT"
             ]
           },
           "status": {
@@ -3620,10 +3763,7 @@
             "type": "string",
             "enum": [
               "PURCHASE_RECORDED",
-              "INTERESTED",
-              "CONSIDERING",
-              "NOT_INTERESTED",
-              "UNREACHABLE"
+              "NOT_PURCHASED"
             ],
             "nullable": true
           },
@@ -3741,10 +3881,8 @@
           "outcome": {
             "type": "string",
             "enum": [
-              "INTERESTED",
-              "CONSIDERING",
-              "NOT_INTERESTED",
-              "UNREACHABLE"
+              "PURCHASED",
+              "NOT_PURCHASED"
             ]
           }
         },
@@ -3752,50 +3890,6 @@
           "expectedVersion",
           "communication",
           "outcome"
-        ]
-      },
-      "SuggestionRequest": {
-        "type": "object",
-        "properties": {
-          "channel": {
-            "type": "string",
-            "enum": [
-              "EMAIL",
-              "PHONE",
-              "SMS",
-              "WECHAT",
-              "IN_PERSON"
-            ]
-          },
-          "language": {
-            "type": "string",
-            "enum": [
-              "en-AU",
-              "zh-CN"
-            ]
-          }
-        },
-        "required": [
-          "channel",
-          "language"
-        ]
-      },
-      "ObservationDto": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string"
-          },
-          "sourceIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "text",
-          "sourceIds"
         ]
       },
       "EvidenceDto": {
@@ -3813,54 +3907,55 @@
           "text"
         ]
       },
-      "SuggestionDto": {
+      "ReportDto": {
         "type": "object",
         "properties": {
-          "summary": {
+          "id": {
             "type": "string"
           },
-          "observations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ObservationDto"
-            }
-          },
-          "questions": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "suggestedNextStep": {
+          "taskId": {
             "type": "string"
           },
-          "talkingPoints": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "sourceFollowupTaskId": {
+            "type": "string"
           },
-          "subject": {
-            "type": "string",
-            "nullable": true
+          "version": {
+            "type": "number"
           },
-          "messageDraft": {
+          "generationStatus": {
             "type": "string",
-            "nullable": true
+            "enum": [
+              "NOT_STARTED",
+              "READY",
+              "FAILED"
+            ]
           },
           "source": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "nullable": true
           },
           "generatedAt": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
-          "inputRecordIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+          "lastErrorCode": {
+            "type": "string",
+            "nullable": true
           },
-          "evidence": {
+          "stale": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true
+          },
+          "evidenceSnapshot": {
+            "nullable": true,
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EvidenceDto"
@@ -3868,17 +3963,29 @@
           }
         },
         "required": [
-          "summary",
-          "observations",
-          "questions",
-          "suggestedNextStep",
-          "talkingPoints",
-          "subject",
-          "messageDraft",
+          "id",
+          "taskId",
+          "sourceFollowupTaskId",
+          "version",
+          "generationStatus",
           "source",
+          "model",
           "generatedAt",
-          "inputRecordIds",
-          "evidence"
+          "lastErrorCode",
+          "stale",
+          "content",
+          "evidenceSnapshot"
+        ]
+      },
+      "ReportVersionDto": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "expectedVersion"
         ]
       },
       "TrialGrantDto": {

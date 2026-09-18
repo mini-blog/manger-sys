@@ -1,3 +1,4 @@
+import { StudentBackground } from './StudentBackground';
 import { useEffect, useId, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircleOutline } from '@mui/icons-material';
@@ -169,8 +170,10 @@ function RollCallRow({
           {p.name}
         </Typography>
         <Typography variant="caption" color="text.secondary">
-          {p.yearLevel}
+          {p.yearLevel} · {p.gender ? label(p.gender) : 'Not provided'} ·{' '}
+          {p.age == null ? 'Age not provided' : `Age ${p.age}`}
         </Typography>
+        <StudentBackground key={p.participantId} name={p.name} html={p.backgroundHtml} />
       </TableCell>
       <TableCell>
         <Chip

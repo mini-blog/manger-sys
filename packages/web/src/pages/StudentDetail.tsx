@@ -1,3 +1,5 @@
+import { RichView } from '../components/RichText';
+import { ScoreField } from '../components/ScoreField';
 import { GuardianFields, guardianFormFrom, guardianPayload } from '../components/GuardianFields';
 import { StudentDemographicsFields } from '../components/StudentDemographicsFields';
 import { YEAR_LEVELS } from '@student/common';
@@ -168,6 +170,18 @@ function StudentProfile({ student: s }: { student: Student }) {
         </Typography>
       )}
       {s.canEdit && <StudentCredits student={s} />}
+      {s.backgroundHtml !== undefined && (
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6">Basic information</Typography>
+          <RichView html={s.backgroundHtml} />
+        </Paper>
+      )}
+      {s.canEdit && (
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h6">Admin notes</Typography>
+          <RichView html={s.adminNotesHtml} />
+        </Paper>
+      )}
       {s.canEdit && !edit && (
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6">Guardian & preferences</Typography>
@@ -211,7 +225,13 @@ function StudentProfile({ student: s }: { student: Student }) {
               <Typography variant="body2" color="text.secondary">
                 {r.lesson.teacherName} · {label(r.attendance)}
               </Typography>
-              {r.feedback && <Typography sx={{ whiteSpace: 'pre-wrap' }}>{r.feedback}</Typography>}
+              <ScoreField
+                label="Classroom performance"
+                value={r.classroomPerformanceRating}
+                readOnly
+              />
+              <ScoreField label="Overall ability" value={r.overallAbilityRating} readOnly />
+              <RichView html={r.teacherNoteHtml} />
             </div>
           ))}
         </Stack>
@@ -279,7 +299,7 @@ export function Communications({ student: s }: { student: Student }) {
           : s.guardianWechat
             ? 'WECHAT'
             : 'IN_PERSON'),
-    content: '',
+    noteHtml: '',
     occurredAt: wall(new Date().toISOString()),
   });
   const query = useQuery({
@@ -294,7 +314,7 @@ export function Communications({ student: s }: { student: Student }) {
   });
   const save = useWrite('post', '/api/students/{id}/communications', { id: s.id }, () => {
     setOpen(false);
-    setForm({ ...form, content: '', concerns: '', coreQuestion: '', reasonTags: [] });
+    setForm({ ...form, noteHtml: '' });
     setPage(1);
   });
   return (
@@ -354,14 +374,12 @@ export function Communications({ student: s }: { student: Student }) {
             <Typography variant="body2" color="text.secondary">
               {local(c.occurredAt).toFormat('d LLL yyyy HH:mm')} · {label(c.channel)} ·{' '}
               {c.guardianNameSnapshot} · {c.authorName}
-              {c.outcome ? ` · ${label(c.outcome)}` : ''}
             </Typography>
-            <Typography sx={{ whiteSpace: 'pre-wrap' }}>{c.content}</Typography>
-            {c.concerns && <Typography>Concerns: {c.concerns}</Typography>}
-            {c.coreQuestion && <Typography>Core question: {c.coreQuestion}</Typography>}
-            {!!c.reasonTags.length && (
-              <Typography variant="body2">{c.reasonTags.map(label).join(' · ')}</Typography>
+            <RichView html={c.noteHtml} />
+            {c.purchaseIntentRating != null && (
+              <ScoreField label="Purchase intent" value={c.purchaseIntentRating} readOnly />
             )}
+            <Typography variant="body2">{c.notPurchasedReasons.map(label).join(' · ')}</Typography>
           </div>
         ))}
       </Stack>

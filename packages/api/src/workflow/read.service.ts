@@ -69,9 +69,14 @@ export function participantDto(
     feedbackSubmittedAt: visible ? (p.feedbackSubmittedAt?.toISOString() ?? null) : null,
     version: p.version,
     canManage: u.role === 'ADMIN' && p.student.ownerAdminId === u.id,
-    feedback: visible ? p.feedback : null,
-    abilityNote: visible ? p.abilityNote : null,
-    preferenceNote: visible ? p.preferenceNote : null,
+    gender: p.student.gender,
+    age: p.student.age,
+    backgroundHtml: visible ? p.student.backgroundHtml : null,
+    classroomPerformanceRating:
+      visible && p.classroomPerformanceRating != null ? Number(p.classroomPerformanceRating) : null,
+    overallAbilityRating:
+      visible && p.overallAbilityRating != null ? Number(p.overallAbilityRating) : null,
+    teacherNoteHtml: visible ? p.teacherNoteHtml : null,
   };
 }
 export function taskDto(t: FullTask, now: Date): D.TaskDto {
@@ -106,14 +111,15 @@ export function taskDto(t: FullTask, now: Date): D.TaskDto {
             'startsAt',
             'endsAt',
             'checkedInAt',
-            'feedback',
-            'abilityNote',
-            'preferenceNote',
+            'classroomPerformanceRating',
+            'overallAbilityRating',
+            'teacherNoteHtml',
             'feedbackSubmittedAt',
             'membershipCategory',
-          ].includes(key) && typeof value === 'string',
+          ].includes(key) &&
+          (typeof value === 'string' || typeof value === 'number'),
       ),
-    ) as Record<string, string>,
+    ) as Record<string, string | number>,
     type: t.type,
     status: t.status,
     followupOutcome: t.followupOutcome,
@@ -140,8 +146,7 @@ function visibleTask(user: Actor, status: D.TaskDto['status'], now: Date): Prism
     ...(status === 'OPEN' ? { availableAt: { lte: now } } : {}),
     ...(user.role === 'ADMIN'
       ? {
-          type: 'TRIAL_FOLLOWUP',
-          purpose: 'FIRST_PURCHASE',
+          type: { in: ['TRIAL_FOLLOWUP', 'STUDENT_AI_REPORT'] },
           participant: { student: { ownerAdminId: user.id } },
         }
       : {
@@ -171,7 +176,7 @@ export async function assignedTask(tx: Tx, user: Actor, id: string) {
   const t = required(await tx.task.findUnique({ where: { id }, include: taskInclude }));
   if (t.assigneeId !== user.id)
     throw new ForbiddenException('This task is assigned to another user.');
-  if (t.type === 'TRIAL_FOLLOWUP') owner(user, required(t.participant).student);
+  if (t.type !== 'TRIAL_FEEDBACK') owner(user, required(t.participant).student);
   else if (user.role !== 'TEACHER' || t.session.teacherId !== user.id)
     throw new ForbiddenException('This lesson is assigned to another teacher.');
   return t;
@@ -395,14 +400,22 @@ export class ReadService {
         lesson: lessonDto(p.session),
         ...rosterMembership(s, p.session.startsAt),
         attendance: p.attendance,
-        feedback: p.feedback,
+        classroomPerformanceRating:
+          p.classroomPerformanceRating == null ? null : Number(p.classroomPerformanceRating),
+        overallAbilityRating:
+          p.overallAbilityRating == null ? null : Number(p.overallAbilityRating),
+        teacherNoteHtml: p.teacherNoteHtml,
       })),
     };
     if (user.role === 'ADMIN' && s.adminLink) {
       base.responsibleAdmin = s.adminLink.admin;
       base.recordedByAdmin = s.adminLink.createdByAdmin;
     }
-    if (canEdit) base.guardianAge = s.guardianAge;
+    if (canEdit || user.role === 'TEACHER') base.backgroundHtml = s.backgroundHtml;
+    if (canEdit) {
+      base.guardianAge = s.guardianAge;
+      base.adminNotesHtml = s.adminNotesHtml;
+    }
     if (canEdit)
       for (const field of [
         'guardianOccupation',
@@ -440,13 +453,12 @@ export class ReadService {
         studentId: c.studentId,
         guardianNameSnapshot: c.guardianNameSnapshot,
         channel: c.channel,
-        content: c.content,
-        concerns: c.concerns,
-        coreQuestion: c.coreQuestion,
-        reasonTags: c.reasonTags,
+        noteHtml: c.noteHtml,
+        purchaseIntentRating:
+          c.purchaseIntentRating == null ? null : Number(c.purchaseIntentRating),
+        notPurchasedReasons: c.notPurchasedReasons,
         occurredAt: c.occurredAt.toISOString(),
         authorName: c.author.name,
-        outcome: c.outcome,
       })),
       total,
       page: q.page,
@@ -483,12 +495,14 @@ export class ReadService {
     };
   }
   async tasks(user: Actor, q: D.TaskQuery) {
-    const type = user.role === 'ADMIN' ? 'TRIAL_FOLLOWUP' : 'TRIAL_FEEDBACK';
-    if (q.type && q.type !== type)
+    const types =
+      user.role === 'ADMIN' ? ['TRIAL_FOLLOWUP', 'STUDENT_AI_REPORT'] : ['TRIAL_FEEDBACK'];
+    if (q.type && !types.includes(q.type))
       throw new ForbiddenException('This task type is not available to your role.');
     const now = this.clock.now();
     const where: Prisma.TaskWhereInput = {
       ...visibleTask(user, q.overdue === 'true' ? 'OPEN' : (q.status ?? 'OPEN'), now),
+      ...(q.type ? { type: q.type } : {}),
       ...(q.overdue === 'true' ? { dueAt: { lt: now }, status: 'OPEN' } : {}),
       ...(q.q
         ? {
@@ -551,13 +565,12 @@ export class ReadService {
                   studentId: c.studentId,
                   guardianNameSnapshot: c.guardianNameSnapshot,
                   channel: c.channel,
-                  content: c.content,
-                  concerns: c.concerns,
-                  coreQuestion: c.coreQuestion,
-                  reasonTags: c.reasonTags,
+                  noteHtml: c.noteHtml,
+                  purchaseIntentRating:
+                    c.purchaseIntentRating == null ? null : Number(c.purchaseIntentRating),
+                  notPurchasedReasons: c.notPurchasedReasons,
                   occurredAt: c.occurredAt.toISOString(),
                   authorName: c.author.name,
-                  outcome: c.outcome,
                 })),
               }
             : {}),

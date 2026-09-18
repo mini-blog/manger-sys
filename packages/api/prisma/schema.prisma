@@ -45,13 +45,11 @@ enum Attendance {
 enum TaskType {
   TRIAL_FEEDBACK
   TRIAL_FOLLOWUP
+  STUDENT_AI_REPORT
 }
 enum FollowupOutcome {
   PURCHASE_RECORDED
-  INTERESTED
-  CONSIDERING
-  NOT_INTERESTED
-  UNREACHABLE
+  NOT_PURCHASED
 }
 
 enum TaskStatus {
@@ -78,6 +76,13 @@ enum MembershipCategory {
 }
 enum TaskPurpose {
   FIRST_PURCHASE
+  POST_TRIAL_REVIEW
+}
+
+enum ReportGenerationStatus {
+  NOT_STARTED
+  READY
+  FAILED
 }
 
 model User {
@@ -135,6 +140,11 @@ model Student {
   guardianWechat String?
   preferredChannel String?
   preferredLanguage String @default("en-AU")
+  backgroundHtml String?
+  backgroundText String?
+  adminNotesHtml String?
+  adminNotesText String?
+  aiReports StudentAiReport[]
   learningGoals String?
   preferredTimes String?
   interestedSubjects String?
@@ -210,9 +220,10 @@ model SessionParticipant {
   checkedInBy String?
   checkInActor User? @relation("ParticipantCheckInActor", fields: [checkedInBy], references: [id], onDelete: Restrict)
   feedbackSubmittedAt DateTime? @db.Timestamptz(3)
-  feedback String?
-  abilityNote String?
-  preferenceNote String?
+  classroomPerformanceRating Decimal? @db.Decimal
+  overallAbilityRating Decimal? @db.Decimal
+  teacherNoteHtml String?
+  teacherNoteText String?
   categorySnapshot String?
   membershipCategorySnapshot MembershipCategory?
   consumption EntitlementEntry?
@@ -246,6 +257,8 @@ model Task {
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
   communications CommunicationLog[]
+  aiReport StudentAiReport? @relation("ReportTask")
+  sourcedReport StudentAiReport? @relation("ReportSource")
   @@index([assigneeId,status,availableAt,dueAt])
 }
 model CommunicationLog {
@@ -259,15 +272,15 @@ model CommunicationLog {
   guardianNameSnapshot String
   relationshipSnapshot String?
   channel String
-  content String
-  concerns String?
-  coreQuestion String?
-  reasonTags String[] @default([])
-  outcome String?
+  noteHtml String?
+  noteText String?
+  purchaseIntentRating Decimal? @db.Decimal
+  notPurchasedReasons String[] @default([])
   occurredAt DateTime @db.Timestamptz(3)
   createdBy String
   author User @relation(fields:[createdBy], references:[id])
   createdAt DateTime @default(now()) @db.Timestamptz(3)
+  @@unique([taskId], map: "CommunicationLog_taskId_unique")
   @@index([studentId,occurredAt])
 }
 model ScheduleChange {
@@ -347,4 +360,28 @@ model AccountAudit {
   requestKey String
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   @@index([targetUserId, createdAt])
+}
+
+model StudentAiReport {
+ id String @id @default(cuid())
+ taskId String @unique
+ task Task @relation("ReportTask", fields: [taskId], references: [id], onDelete: Restrict)
+ studentId String
+ student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+ sourceFollowupTaskId String @unique
+ sourceFollowupTask Task @relation("ReportSource", fields: [sourceFollowupTaskId], references: [id], onDelete: Restrict)
+ generationStatus ReportGenerationStatus @default(NOT_STARTED)
+ schemaVersion Int @default(1)
+ content Json?
+ evidenceSnapshot Json?
+ inputFingerprint String?
+ source String?
+ provider String?
+ model String?
+ generatedAt DateTime? @db.Timestamptz(3)
+ lastErrorCode String?
+ version Int @default(1)
+ createdAt DateTime @default(now()) @db.Timestamptz(3)
+ updatedAt DateTime @updatedAt @db.Timestamptz(3)
+ @@index([studentId, createdAt])
 }

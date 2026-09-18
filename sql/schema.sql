@@ -1,4 +1,4 @@
--- Current StudentSys schema for EMPTY databases only. No upgrade history.
+-- StudentSys AI v2 schema for EMPTY databases only. Use with the AI v2 application services.
 -- Keep aligned with prisma/schema.prisma, including SQL-only constraints and triggers.
 BEGIN;
 --
@@ -81,10 +81,7 @@ CREATE TYPE public."EntitlementKind" AS ENUM (
 
 CREATE TYPE public."FollowupOutcome" AS ENUM (
     'PURCHASE_RECORDED',
-    'INTERESTED',
-    'CONSIDERING',
-    'NOT_INTERESTED',
-    'UNREACHABLE'
+    'NOT_PURCHASED'
 );
 
 
@@ -144,7 +141,8 @@ CREATE TYPE public."StudentType" AS ENUM (
 --
 
 CREATE TYPE public."TaskPurpose" AS ENUM (
-    'FIRST_PURCHASE'
+    'FIRST_PURCHASE',
+    'POST_TRIAL_REVIEW'
 );
 
 
@@ -165,7 +163,8 @@ CREATE TYPE public."TaskStatus" AS ENUM (
 
 CREATE TYPE public."TaskType" AS ENUM (
     'TRIAL_FEEDBACK',
-    'TRIAL_FOLLOWUP'
+    'TRIAL_FOLLOWUP',
+    'STUDENT_AI_REPORT'
 );
 
 
@@ -283,14 +282,13 @@ CREATE TABLE public."CommunicationLog" (
     "guardianNameSnapshot" text NOT NULL,
     "relationshipSnapshot" text,
     channel text NOT NULL,
-    content text NOT NULL,
-    outcome text,
+    "noteHtml" text,
+    "noteText" text,
+    "purchaseIntentRating" numeric,
     "occurredAt" timestamp(3) with time zone NOT NULL,
     "createdBy" text NOT NULL,
     "createdAt" timestamp(3) with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    concerns text,
-    "coreQuestion" text,
-    "reasonTags" text[] DEFAULT ARRAY[]::text[] NOT NULL
+    "notPurchasedReasons" text[] DEFAULT ARRAY[]::text[] NOT NULL
 );
 
 
@@ -388,12 +386,13 @@ CREATE TABLE public."SessionParticipant" (
     "sessionId" text NOT NULL,
     "studentId" text NOT NULL,
     kind public."ParticipantKind" DEFAULT 'REGULAR'::public."ParticipantKind" NOT NULL,
-    "abilityNote" text,
     attendance public."Attendance" DEFAULT 'PENDING'::public."Attendance" NOT NULL,
     "bookingStatus" public."BookingStatus" DEFAULT 'BOOKED'::public."BookingStatus" NOT NULL,
     "categorySnapshot" text,
-    feedback text,
-    "preferenceNote" text,
+    "classroomPerformanceRating" numeric,
+    "overallAbilityRating" numeric,
+    "teacherNoteHtml" text,
+    "teacherNoteText" text,
     version integer DEFAULT 1 NOT NULL,
     "membershipCategorySnapshot" public."MembershipCategory",
     "checkedInAt" timestamp(3) with time zone,
@@ -421,6 +420,10 @@ CREATE TABLE public."Student" (
     "guardianWechat" text,
     "interestedSubjects" text,
     "learningGoals" text,
+    "backgroundHtml" text,
+    "backgroundText" text,
+    "adminNotesHtml" text,
+    "adminNotesText" text,
     "preferredChannel" text,
     "preferredLanguage" text DEFAULT 'en-AU'::text NOT NULL,
     "preferredTimes" text,
@@ -476,7 +479,10 @@ CREATE TABLE public."Task" (
     "resolvedByEntitlementEntryId" text,
     "followupOutcome" public."FollowupOutcome",
     CONSTRAINT "Task_followup_outcome_check" CHECK ((("followupOutcome" IS NULL) OR ((type = 'TRIAL_FOLLOWUP'::public."TaskType") AND (status = 'DONE'::public."TaskStatus") AND ("completedAt" IS NOT NULL) AND (("followupOutcome" <> 'PURCHASE_RECORDED'::public."FollowupOutcome") OR ("resolvedByEntitlementEntryId" IS NOT NULL))))),
-    CONSTRAINT "Task_purpose_type_check" CHECK ((((type = 'TRIAL_FOLLOWUP'::public."TaskType") AND (purpose = 'FIRST_PURCHASE'::public."TaskPurpose")) OR ((type = 'TRIAL_FEEDBACK'::public."TaskType") AND (purpose IS NULL) AND ("resolvedByEntitlementEntryId" IS NULL)))),
+    CONSTRAINT "Task_purpose_type_check" CHECK (
+      (type='TRIAL_FOLLOWUP' AND purpose IS NOT NULL AND purpose='FIRST_PURCHASE')
+      OR (type='TRIAL_FEEDBACK' AND purpose IS NULL AND "resolvedByEntitlementEntryId" IS NULL)
+      OR (type='STUDENT_AI_REPORT' AND purpose IS NOT NULL AND purpose='POST_TRIAL_REVIEW' AND "resolvedByEntitlementEntryId" IS NULL)),
     CONSTRAINT "Task_source_type_check" CHECK (("participantId" IS NOT NULL))
 );
 
@@ -1057,4 +1063,108 @@ ALTER TABLE ONLY public."Task"
 --
 
 
+-- AI workflow: exact numeric without scale coercion, so 3.49 is rejected, never rounded to 3.5.
+CREATE TYPE public."ReportGenerationStatus" AS ENUM ('NOT_STARTED','READY','FAILED');
+CREATE TABLE public."StudentAiReport" (
+ id text PRIMARY KEY,
+ "taskId" text NOT NULL UNIQUE REFERENCES public."Task"(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+ "studentId" text NOT NULL REFERENCES public."Student"(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+ "sourceFollowupTaskId" text NOT NULL UNIQUE REFERENCES public."Task"(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+ "generationStatus" public."ReportGenerationStatus" NOT NULL DEFAULT 'NOT_STARTED',
+ "schemaVersion" integer NOT NULL DEFAULT 1 CHECK ("schemaVersion"=1),
+ content jsonb,
+ "evidenceSnapshot" jsonb,
+ "inputFingerprint" text,
+ source text CHECK (source IN ('llm','fixture')),
+ provider text,
+ model text,
+ "generatedAt" timestamptz(3),
+ "lastErrorCode" text,
+ version integer NOT NULL DEFAULT 1 CHECK (version>0),
+ "createdAt" timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ "updatedAt" timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ CHECK ("taskId"<>"sourceFollowupTaskId"),
+ CHECK (
+  ("generationStatus"='READY' AND content IS NOT NULL AND jsonb_typeof(content)='object'
+    AND "evidenceSnapshot" IS NOT NULL AND jsonb_typeof("evidenceSnapshot")='array'
+    AND "generatedAt" IS NOT NULL AND "inputFingerprint" IS NOT NULL AND source IS NOT NULL AND "lastErrorCode" IS NULL)
+  OR ("generationStatus"='NOT_STARTED' AND content IS NULL AND "generatedAt" IS NULL AND "lastErrorCode" IS NULL)
+  OR ("generationStatus"='FAILED' AND content IS NULL AND "generatedAt" IS NULL AND "lastErrorCode" IS NOT NULL)
+ )
+);
+CREATE INDEX "StudentAiReport_studentId_createdAt_idx" ON public."StudentAiReport"("studentId","createdAt");
+
+ALTER TABLE public."SessionParticipant"
+ ADD CONSTRAINT "evaluation_ratings" CHECK (
+   ("feedbackSubmittedAt" IS NULL AND "classroomPerformanceRating" IS NULL AND "overallAbilityRating" IS NULL)
+   OR ("feedbackSubmittedAt" IS NOT NULL AND "checkedInAt" IS NOT NULL
+     AND "classroomPerformanceRating" IS NOT NULL AND "overallAbilityRating" IS NOT NULL
+     AND "classroomPerformanceRating" BETWEEN 1 AND 5
+     AND "overallAbilityRating" BETWEEN 1 AND 5
+     AND mod("classroomPerformanceRating"*2,1)=0 AND mod("overallAbilityRating"*2,1)=0)),
+ ADD CONSTRAINT "teacher_note_pair" CHECK (("teacherNoteHtml" IS NULL)=("teacherNoteText" IS NULL) AND length("teacherNoteText")<=2000);
+ALTER TABLE public."Student"
+ ADD CONSTRAINT "background_pair" CHECK (("backgroundHtml" IS NULL)=("backgroundText" IS NULL) AND length("backgroundText")<=5000),
+ ADD CONSTRAINT "admin_notes_pair" CHECK (("adminNotesHtml" IS NULL)=("adminNotesText" IS NULL) AND length("adminNotesText")<=5000);
+ALTER TABLE public."CommunicationLog"
+ ADD CONSTRAINT "intent_rating" CHECK ("purchaseIntentRating" BETWEEN 1 AND 5 AND mod("purchaseIntentRating"*2,1)=0),
+ ADD CONSTRAINT "communication_note_pair" CHECK (("noteHtml" IS NULL)=("noteText" IS NULL) AND length("noteText")<=2000),
+ ADD CONSTRAINT "reason_values" CHECK ("notPurchasedReasons" <@ ARRAY['PRICE','TIME','COURSE_FIT','TEACHING_FIT','CHILD_INTEREST','FAMILY_PLAN','COMPARING','UNREACHABLE','OTHER']::text[]
+   AND array_position("notPurchasedReasons",NULL) IS NULL),
+ ADD CONSTRAINT "unreachable_unknown" CHECK (NOT ('UNREACHABLE'=ANY("notPurchasedReasons")) OR ("purchaseIntentRating" IS NULL AND cardinality("notPurchasedReasons")=1));
+CREATE UNIQUE INDEX "CommunicationLog_taskId_unique" ON public."CommunicationLog"("taskId");
+ALTER TABLE public."Task"
+ ADD CONSTRAINT "task_completion_time" CHECK ((status='DONE')=("completedAt" IS NOT NULL)),
+ ADD CONSTRAINT "followup_completed_result" CHECK (type<>'TRIAL_FOLLOWUP' OR status<>'DONE' OR "followupOutcome" IS NOT NULL),
+ ADD CONSTRAINT "purchase_reference_only" CHECK ("resolvedByEntitlementEntryId" IS NULL OR (type='TRIAL_FOLLOWUP' AND "followupOutcome" IS NOT NULL AND "followupOutcome"='PURCHASE_RECORDED'));
+
+-- Deferred checks allow all rows of a workflow transaction to be written in any order.
+CREATE FUNCTION public.check_ai_workflow() RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$
+BEGIN
+ IF EXISTS (
+  SELECT 1 FROM "Task" t JOIN "SessionParticipant" p ON p.id=t."participantId"
+  JOIN "User" u ON u.id=t."assigneeId"
+  WHERE t."sessionId"<>p."sessionId"
+   OR (t.type='TRIAL_FEEDBACK' AND u.role<>'TEACHER')
+   OR (t.type IN ('TRIAL_FOLLOWUP','STUDENT_AI_REPORT') AND u.role<>'ADMIN')
+ ) THEN RAISE EXCEPTION 'Task source or assignee role mismatch' USING ERRCODE='23514'; END IF;
+ IF EXISTS (
+  SELECT 1 FROM "CommunicationLog" c JOIN "Task" t ON t.id=c."taskId"
+  JOIN "SessionParticipant" p ON p.id=t."participantId"
+  WHERE t.type<>'TRIAL_FOLLOWUP' OR t.status<>'DONE' OR c."studentId"<>p."studentId"
+   OR c."participantId" IS DISTINCT FROM p.id
+   OR (t."followupOutcome"='NOT_PURCHASED' AND
+      (cardinality(c."notPurchasedReasons")=0 OR c."noteText" IS NULL OR length(btrim(c."noteText"))=0
+       OR (NOT ('UNREACHABLE'=ANY(c."notPurchasedReasons")) AND c."purchaseIntentRating" IS NULL)))
+   OR (t."followupOutcome"='PURCHASE_RECORDED' AND (c."purchaseIntentRating" IS NOT NULL OR cardinality(c."notPurchasedReasons")<>0))
+ ) THEN RAISE EXCEPTION 'Invalid follow-up content' USING ERRCODE='23514'; END IF;
+ IF EXISTS (
+  SELECT 1 FROM "Task" t JOIN "SessionParticipant" p ON p.id=t."participantId"
+  LEFT JOIN "EntitlementEntry" e ON e.id=t."resolvedByEntitlementEntryId"
+  WHERE t.type='TRIAL_FOLLOWUP' AND t.status='DONE' AND
+   (NOT EXISTS(SELECT 1 FROM "CommunicationLog" c WHERE c."taskId"=t.id)
+    OR (t."followupOutcome"='PURCHASE_RECORDED' AND (e.id IS NULL OR e."studentId"<>p."studentId" OR e.kind<>'PURCHASE' OR e.bucket<>'REGULAR'))
+    OR (t."followupOutcome"='NOT_PURCHASED' AND NOT EXISTS(SELECT 1 FROM "StudentAiReport" r WHERE r."sourceFollowupTaskId"=t.id)))
+ ) THEN RAISE EXCEPTION 'Completed follow-up requires communication and purchase/report reference' USING ERRCODE='23514'; END IF;
+ IF EXISTS (
+  SELECT 1 FROM "StudentAiReport" r JOIN "Task" t ON t.id=r."taskId"
+  JOIN "Task" f ON f.id=r."sourceFollowupTaskId" JOIN "SessionParticipant" p ON p.id=t."participantId"
+  WHERE t.type<>'STUDENT_AI_REPORT' OR f.type<>'TRIAL_FOLLOWUP' OR f.status<>'DONE'
+   OR f."followupOutcome" IS DISTINCT FROM 'NOT_PURCHASED'::"FollowupOutcome"
+   OR t."participantId" IS DISTINCT FROM f."participantId" OR r."studentId"<>p."studentId"
+   OR (t.status='DONE' AND r."generationStatus"<>'READY')
+ ) OR EXISTS (SELECT 1 FROM "Task" t WHERE t.type='STUDENT_AI_REPORT'
+   AND NOT EXISTS(SELECT 1 FROM "StudentAiReport" r WHERE r."taskId"=t.id))
+ THEN RAISE EXCEPTION 'Invalid AI report source or completion' USING ERRCODE='23514'; END IF;
+ RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER "Task_ai_integrity" AFTER INSERT OR UPDATE OR DELETE ON public."Task"
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_ai_workflow();
+CREATE CONSTRAINT TRIGGER "Communication_ai_integrity" AFTER INSERT OR UPDATE OR DELETE ON public."CommunicationLog"
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_ai_workflow();
+CREATE CONSTRAINT TRIGGER "Report_ai_integrity" AFTER INSERT OR UPDATE OR DELETE ON public."StudentAiReport"
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION public.check_ai_workflow();
+
 COMMIT;
+-- Restore normal resolution for clients that load schema and seed on one connection.
+SET search_path = public;

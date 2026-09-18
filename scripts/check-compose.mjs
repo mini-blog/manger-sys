@@ -7,7 +7,7 @@ const env = {
   ...process.env,
   POSTGRES_PASSWORD: 'compose-validation-only',
   SESSION_COOKIE_SECURE: 'true',
-  QWEN_API_KEY: '',
+  QIWEN_API_KEY: 'compose-test-key',
   QWEN_BASE_URL: '',
   QWEN_MODEL: '',
 };
@@ -34,6 +34,9 @@ for (const c of [dev, prod]) {
   assert.equal(c.services.web.depends_on.api.condition, 'service_healthy');
   for (const service of ['api', 'db', 'web']) assert.ok(c.services[service].healthcheck);
   assert.ok(c.services.db.volumes.some((v) => v.type === 'volume'));
+  assert.equal(c.services.api.environment.QIWEN_API_KEY, 'compose-test-key');
+  assert.equal(c.services.web.environment?.QIWEN_API_KEY, undefined);
+  assert.equal(c.services.db.environment?.QIWEN_API_KEY, undefined);
 }
 for (const [service, target] of [
   ['web', 5173],

@@ -1,25 +1,36 @@
-// Explicit opt-in smoke test; only fictional content is sent. No DB records are read.
+// Explicit opt-in: fictional input only; never reads customer records.
 import { config } from 'dotenv';
 import { createRequire } from 'node:module';
+config({ path: 'env.local', quiet: true });
 config({ path: '.env', quiet: true });
-if (!process.env.QWEN_API_KEY || !process.env.QWEN_BASE_URL || !process.env.QWEN_MODEL) {
-  console.error('Configure QWEN_API_KEY, QWEN_BASE_URL and QWEN_MODEL in the backend .env first.');
+if (!process.env.QIWEN_API_KEY || !process.env.QWEN_BASE_URL || !process.env.QWEN_MODEL) {
+  console.error('Configure QIWEN_API_KEY, QWEN_BASE_URL and QWEN_MODEL in backend environment.');
   process.exit(1);
 }
 const require = createRequire(import.meta.url);
-const { QwenProvider, validateSuggestion } = require('../dist/workflow/ai.service');
+const { QwenProvider, validateReport } = require('../dist/workflow/ai.service');
+const { reportJsonSchema } = require('../dist/workflow/report-schema');
+const facts = {
+  classroomPerformanceRating: 4,
+  overallAbilityRating: 3.5,
+  purchaseIntentRating: 3,
+  reasons: ['TIME'],
+};
+const evidence = [
+  {
+    id: 'fictional-evaluation',
+    text: 'Fictional learner enjoys visual exercises. Parent requests alternative times.',
+  },
+];
 const result = await new QwenProvider().generate({
-  channel: 'EMAIL',
+  facts,
+  evidence,
   language: 'en-AU',
-  reason: 'TRIAL_COMPLETED',
-  evidence: [
-    {
-      id: 'fictional-feedback',
-      text: 'Fictional demonstration: student enjoyed visual mathematics exercises; no purchase intent recorded.',
-    },
-  ],
+  outputSchema: reportJsonSchema,
 });
-validateSuggestion(result, 'EMAIL', ['fictional-feedback']);
-console.log(
-  'Real Qwen returned a valid structured response. No database or personal records were used.',
+validateReport(
+  result,
+  facts,
+  evidence.map((e) => e.id),
 );
+console.log('Real Qwen returned valid report JSON for fictional data. No personal records sent.');

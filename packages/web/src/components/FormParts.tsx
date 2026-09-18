@@ -1,3 +1,4 @@
+import { RichText } from './RichText';
 import {
   COMMUNICATION_CHANNELS,
   FOLLOWUP_REASON_TAGS,
@@ -41,11 +42,8 @@ export function Status({
 export type CommunicationFields = {
   guardianNameSnapshot: string;
   channel: string;
-  content: string;
+  noteHtml: string;
   occurredAt: string;
-  concerns?: string;
-  coreQuestion?: string;
-  reasonTags?: FollowupReasonTag[];
 };
 export function CommunicationFieldsForm({
   value,
@@ -87,49 +85,11 @@ export function CommunicationFieldsForm({
           fullWidth
         />
       </Stack>
-      <TextField
-        label="Actual communication"
-        required
-        multiline
-        minRows={3}
-        value={value.content}
-        onChange={(e) => set({ ...value, content: e.target.value })}
-        slotProps={{ htmlInput: { maxLength: 2000 } }}
+      <RichText
+        label="Note"
+        value={value.noteHtml}
+        onChange={(noteHtml) => set({ ...value, noteHtml })}
       />
-      <TextField
-        label="Concerns (optional)"
-        multiline
-        value={value.concerns ?? ''}
-        onChange={(e) => set({ ...value, concerns: e.target.value })}
-        slotProps={{ htmlInput: { maxLength: 2000 } }}
-      />
-      <TextField
-        label="Core question (optional)"
-        multiline
-        value={value.coreQuestion ?? ''}
-        onChange={(e) => set({ ...value, coreQuestion: e.target.value })}
-        slotProps={{ htmlInput: { maxLength: 1000 } }}
-      />
-      <TextField
-        select
-        label="Reasons (optional)"
-        value={value.reasonTags ?? []}
-        slotProps={{ select: { multiple: true } }}
-        onChange={(e) =>
-          set({
-            ...value,
-            reasonTags: (typeof e.target.value === 'string'
-              ? e.target.value.split(',')
-              : e.target.value) as FollowupReasonTag[],
-          })
-        }
-      >
-        {FOLLOWUP_REASON_TAGS.map((tag) => (
-          <MenuItem value={tag} key={tag}>
-            {label(tag)}
-          </MenuItem>
-        ))}
-      </TextField>
     </Stack>
   );
 }

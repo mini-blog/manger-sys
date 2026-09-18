@@ -1,0 +1,72 @@
+name: Reset StudentSys demo database
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Deletes all demo data without backup. Enter RESET_STUDENTSYS'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studentsys-server-deploy
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Validate confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: test "$CONFIRMATION" = RESET_STUDENTSYS
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Verify reset script in isolation
+        run: |
+          docker build -f packages/database/Dockerfile -t studentsys-reset-check .
+          DEPLOY_TEST_IMAGE=studentsys-reset-check node scripts/test-reset-database.mjs
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY" || { echo 'Missing DEPLOY_SSH_KEY secret'; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > ~/.ssh/studentsys_deploy
+          chmod 600 ~/.ssh/studentsys_deploy
+          ssh-keygen -y -P '' -f ~/.ssh/studentsys_deploy > /dev/null
+          cp scripts/deploy/known_hosts ~/.ssh/studentsys_known_hosts
+          cat > ~/.ssh/config <<'SSH_CONFIG'
+          Host studentsys-deploy
+            HostName 47.79.232.38
+            User admin
+            Port 22
+            IdentityFile ~/.ssh/studentsys_deploy
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/studentsys_known_hosts
+            HostKeyAlgorithms ssh-ed25519
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 4
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Reset currently deployed database without backup
+        run: |
+          # Uses the server's current release, not SQL from the selected workflow revision.
+          ssh studentsys-deploy 'sudo -n bash -s -- RESET_STUDENTSYS' < scripts/reset-database-server.sh
+          echo 'StudentSys demo database reset using the currently deployed SQL; no backup created.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove temporary private key
+        if: always()
+        run: rm -f ~/.ssh/studentsys_deploy

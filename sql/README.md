@@ -1,54 +1,37 @@
-# 开发服务器演示数据
+# AI v2 开发数据库
 
-开发服务器数据库镜像首次空卷启动时，依次执行 [schema.sql](schema.sql) 建表和 [development-seed.sql](development-seed.sql) 写入虚构演示数据。已有卷不会再次执行，重启不覆盖数据。
+AI v2数据库与前后端已适配。2026-09-18已备份并重建本地studentsys-local/student_sys，18080服务已恢复，线上未修改。浏览器验收会新增虚构资料并推进演示任务；初始数量以全新库执行seed为准。
+
+- [schema.sql](schema.sql)：空库完整建表，包含原有课时/账号/负责人约束及新增评分、三类待办、报告引用约束。
+- [development-seed.sql](development-seed.sql)：事务写入虚构数据，完成标记ai-demo-v2-complete保证重复执行不补余额、不重开任务。
+- [verify-ai-seed.sql](verify-ai-seed.sql)：检查数据数量、负责人、签到消费、半星评分、购买凭证与报告完整性；负例写入均回滚。
+
+账号密码仍为 **StudentSysDemo2026!**：super@demo.studentsys.test、admin01至admin05@demo.studentsys.test、teacher01至teacher20@demo.studentsys.test。
 
 | 数据 | 数量 |
 | --- | ---: |
-| 超级管理员 | 1（已有启用的super则复用） |
-| 普通Admin | 5 |
-| Teacher | 20 |
-| 会员学生 | 10（5位新会员、5位会员） |
-| 试听学生 | 5 |
-| 正式充值流水 | 10，每位会员20节 |
-| 试听充值流水 | 5，每位试听生3节 |
-| 课程 | 3（墨尔本昨日2节、明日1节） |
-| 学生预约 | 15 |
-| 签到扣课流水 | 12，每位实际签到学生扣1节 |
-| Admin试听跟进待办 | 1，分派给admin01 |
-| 可见教师评价待办 | 1，分派给teacher01 |
+| 账号 | 26 |
+| 学生 | 19（8试听、11会员，其中初次执行时6新会员） |
+| 课程 / 预约 | 3 / 19 |
+| 正式购买 / 试听追加 / 初始赠送 | 11 / 5 / 4 |
+| 签到扣课 | 16 |
+| 教师评价待办 | 9（5完成、1当前可见、3隐藏） |
+| Admin跟进 | 5（1 OPEN、3 NOT_PURCHASED、1 PURCHASE_RECORDED） |
+| AI报告 | 3（NOT_STARTED、READY、FAILED各1） |
 
-另外包含1条已完成教师评价、1条未签到隐藏评价、2条未来课程隐藏评价；这些记录与学生签到、个人反馈和余额对应。充值是人工课时登记，不代表支付到账。日期按首次执行当天的Australia/Melbourne计算，重复执行不会移动课程日期。
+teacher01：Ruby的已完成评价、Henry的待评价及4个完整链路样例。admin01：Ruby待跟进和scenario06未生成报告；admin02：scenario07 READY样例；admin03：scenario08联系不上及失败报告；admin04：scenario09已购买完成态。所有报告待办均OPEN。
 
-新建账号统一密码：**`StudentSysDemo2026!`**。
+READY记录source/provider/model均为fixture，是手写样例，不能用于证明真实千问调用。日期基于首次执行日Australia/Melbourne，重复执行不移动日期。
 
-- 超级管理员：`super@demo.studentsys.test`
-- 普通Admin：`admin01@demo.studentsys.test` 至 `admin05@demo.studentsys.test`
-- 老师：`teacher01@demo.studentsys.test` 至 `teacher20@demo.studentsys.test`
+## 执行与验证
 
-已有super的账号、密码保持不变。SQL中的密码为与后端一致的scrypt哈希；演示密码是公开样例，不作为真实人员的密码。
+当前本地库已执行完毕，无需再清空。手动重复导入验证：
 
-## 执行
-
-首次部署空卷无需手动导入。已有正确表结构、尚未导入演示数据的库，可在**已部署服务器** `/opt/studentsys` 下执行（先将SQL文件复制到该目录）：
-
-```bash
-cd /opt/studentsys
-sudo env IMAGE_TAG="$(sudo cat deployed-sha)" \
-  docker compose --env-file .env.prod -f current/compose.prod.yaml \
-  exec -T db sh -c 'exec psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  < development-seed.sql
+```sh
+docker exec -i studentsys-local-db-1 psql -X -v ON_ERROR_STOP=1 -U student -d student_sys < sql/development-seed.sql
+docker exec -i studentsys-local-db-1 psql -X -v ON_ERROR_STOP=1 -U student -d student_sys < sql/verify-ai-seed.sql
 ```
 
-本地Compose开发环境可在仓库根目录执行：
+新空库先执行schema.sql再执行development-seed.sql。不要把新版SQL导入仍运行旧版应用的服务器。
 
-```bash
-docker compose -f compose.dev.yaml exec -T db \
-  sh -c 'exec psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
-  < sql/development-seed.sql
-```
-
-也可在数据库客户端完整执行SQL文件。全文件为PostgreSQL SQL，无需Node、Prisma或额外数据库扩展。一次事务完成，报错回滚；已成功导入时再次执行会提示跳过，不覆盖密码/学生修改、不补充值、不重开已完成任务。文件末尾输出数量统计。
-
-可登录`admin01`查看试听01的首次购课跟进，或登录`teacher01`评价已签到的试听02。尚未签到/未下课的任务不会出现在教师待办中。SQL只插入自己的演示记录；已存在同名科目会复用，发现演示账号/ID冲突会报错，不覆盖已有数据。
-
-不使用数据库镜像时，空库先执行`sql/schema.sql`（或配置DATABASE_URL后运行`pnpm db:init`），再执行数据SQL。建表文件包含SQL专有约束和触发器，只能对空库运行；不是升级脚本。结构变更需同步此文件与Prisma schema。
+重建前备份：`tmp/ai-schema-backups/before-ai-v2-20260918.dump`（本地忽略文件）。可用pg_restore恢复旧结构及数据，但恢复前需确认目标库并停止连接；不提供自动删除其他库的脚本。

@@ -3,53 +3,41 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { FOLLOWUP_OUTCOMES, MANUAL_FOLLOWUP_OUTCOMES, FOLLOWUP_REASON_TAGS } from '@student/common';
-import { CommunicationDto } from '../src/workflow/dto';
-
-const base = {
-  guardianNameSnapshot: 'Parent',
-  channel: 'PHONE',
-  content: 'Parent asked about lesson times.',
-  occurredAt: '2026-09-17T00:00:00Z',
-};
-const errors = (extra: Record<string, unknown>) =>
-  validateSync(plainToInstance(CommunicationDto, { ...base, ...extra }), {
-    whitelist: true,
-    forbidNonWhitelisted: true,
-  });
-
-test('manual follow-up outcomes cannot claim a recorded purchase', () => {
-  assert.ok(FOLLOWUP_OUTCOMES.includes('PURCHASE_RECORDED'));
-  assert.ok(!MANUAL_FOLLOWUP_OUTCOMES.some((v: string) => v === 'PURCHASE_RECORDED'));
-  assert.deepEqual(MANUAL_FOLLOWUP_OUTCOMES, [
-    'INTERESTED',
-    'CONSIDERING',
-    'NOT_INTERESTED',
-    'UNREACHABLE',
-  ]);
-});
-
-test('communication concerns and reason tags have bounded, non-duplicated values', () => {
-  assert.deepEqual(errors({}), []);
-  assert.deepEqual(errors({ concerns: ' '.repeat(3), coreQuestion: '', reasonTags: [] }), []);
+import { CommunicationDto, ParticipantFeedbackDto } from '../src/workflow/dto';
+test('new evaluation requires two half-star ratings and rejects old fields', () => {
+  const errors = (body: object) =>
+    validateSync(plainToInstance(ParticipantFeedbackDto, body), {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
   assert.deepEqual(
-    errors({
-      concerns: 'Price and time',
-      coreQuestion: 'Can we attend Sunday?',
-      reasonTags: [...FOLLOWUP_REASON_TAGS],
-    }),
+    errors({ expectedVersion: 1, classroomPerformanceRating: 4.5, overallAbilityRating: 1 }),
     [],
   );
+  for (const n of [0, 0.5, 3.49, 5.5, '4'])
+    assert.ok(
+      errors({ expectedVersion: 1, classroomPerformanceRating: n, overallAbilityRating: 4 }).length,
+    );
+  assert.ok(errors({ expectedVersion: 1, feedback: 'old' }).length);
+});
+test('communication rejects duplicate reasons, unknown tags and invalid intent precision', () => {
+  const base = {
+    guardianNameSnapshot: 'Parent',
+    channel: 'EMAIL',
+    occurredAt: '2026-09-17T00:00:00Z',
+    noteHtml: '<p>Reason</p>',
+  };
+  const errors = (extra: object) =>
+    validateSync(plainToInstance(CommunicationDto, { ...base, ...extra }), {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+  assert.deepEqual(errors({ purchaseIntentRating: 3.5, notPurchasedReasons: ['COMPARING'] }), []);
   for (const invalid of [
-    { concerns: 'x'.repeat(2001) },
-    { coreQuestion: 'x'.repeat(1001) },
-    { concerns: 2 },
-    { reasonTags: ['PRICE', 'PRICE'] },
-    { reasonTags: ['MADE_UP'] },
-    { reasonTags: ['PRICE', null] },
-    { reasonTags: [...FOLLOWUP_REASON_TAGS, 'PRICE'] },
-    { reasonTags: 'PRICE' },
-    { followupOutcome: 'PURCHASE_RECORDED' },
+    { notPurchasedReasons: ['PRICE', 'PRICE'] },
+    { notPurchasedReasons: ['MADE_UP'] },
+    { purchaseIntentRating: 3.49 },
+    { content: 'old' },
   ])
-    assert.ok(errors(invalid).length > 0, JSON.stringify(invalid));
+    assert.ok(errors(invalid).length);
 });

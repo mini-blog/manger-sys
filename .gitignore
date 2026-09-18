@@ -2,6 +2,7 @@ node_modules/
 dist/
 dist-dev/
 .env
+/env.local
 .env.*
 !.env.example
 !.env.prod.example

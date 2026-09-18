@@ -16,11 +16,12 @@
     "db:seed": "pnpm --filter @student/api db:seed",
     "openapi:generate": "pnpm --filter @student/api... build && pnpm --filter @student/api openapi:export && pnpm --filter @student/common api:generate && pnpm --filter @student/common build",
     "format": "prettier --write \"packages/**/src/**/*.{ts,tsx}\" \"packages/**/test/*.{ts,mjs}\" \"packages/**/prisma/seed.ts\" \"*.json\" \"*.yaml\"",
-    "test:integration": "pnpm --filter @student/api... build && node packages/api/test/integration.mjs && node packages/api/test/workflow.mjs",
+    "test:integration": "node scripts/test-ai.mjs",
     "test:qwen": "pnpm --filter @student/api... build && node packages/api/test/qwen-smoke.mjs",
     "test:entitlements": "node scripts/test-entitlements.mjs",
     "preview:entitlements": "node scripts/preview-entitlements.mjs",
-    "accounts:bootstrap": "pnpm --filter @student/api... build && pnpm --filter @student/api accounts:bootstrap"
+    "accounts:bootstrap": "pnpm --filter @student/api... build && pnpm --filter @student/api accounts:bootstrap",
+    "test:ai": "node scripts/test-ai.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

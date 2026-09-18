@@ -96,7 +96,11 @@ function TaskNotifications() {
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   {task.courseName} ·{' '}
-                  {task.type === 'TRIAL_FEEDBACK' ? 'Student evaluation' : 'Follow-up'}
+                  {task.type === 'TRIAL_FEEDBACK'
+                    ? 'Student evaluation'
+                    : task.type === 'STUDENT_AI_REPORT'
+                      ? 'Student report'
+                      : 'Purchase follow-up'}
                 </Typography>
                 <Typography variant="caption" component="div" color="text.secondary">
                   Due {local(task.dueAt).toFormat('d LLL, HH:mm')} · Melbourne
