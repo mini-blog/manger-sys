@@ -63,9 +63,16 @@ function run(confirmation = 'RESET_STUDENTSYS', locked = false) {
       resolve('scripts/reset-database-server.sh') + ':/reset.sh:ro',
       '-e',
       'PATH=/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+      '-e',
+      `TEST_UID=${process.getuid()}`,
+      '-e',
+      `TEST_GID=${process.getgid()}`,
       image,
       '-c',
-      command,
+      // Linux bind mounts retain root ownership and the reset script uses umask 077.
+      // Return fixtures to the runner on success AND failure, retaining the reset exit code.
+      // Do not follow fixture symlinks outside the mounted test directory.
+      `${command}; status=$?; chown -hR "$TEST_UID:$TEST_GID" /opt/studentsys; ownership_status=$?; if [ "$ownership_status" -ne 0 ]; then exit "$ownership_status"; fi; exit "$status"`,
       'test',
       confirmation,
     ],
