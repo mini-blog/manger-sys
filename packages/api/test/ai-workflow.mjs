@@ -11,8 +11,8 @@ const { createApp } = require('../dist/bootstrap');
 const { PrismaService } = require('../dist/prisma.service');
 const { AiService, QwenProvider } = require('../dist/workflow/ai.service');
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-await pool.query(await readFile('sql/schema.sql', 'utf8'));
-await pool.query(await readFile('sql/development-seed.sql', 'utf8'));
+// The runner initialized this database through pnpm db:init / db:seed.
+// Repeat SQL seed once to also verify its idempotence.
 await pool.query(await readFile('sql/development-seed.sql', 'utf8'));
 await pool.query(await readFile('sql/verify-ai-seed.sql', 'utf8'));
 const { app } = await createApp();

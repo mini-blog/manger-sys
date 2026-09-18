@@ -45,6 +45,10 @@ try {
     QWEN_MODEL: 'mock-provider-test-only',
     ACCOUNT_COMMAND_HASH_SECRET: randomUUID() + randomUUID(),
   };
+  // Exercise the actual CI/Prisma entry points, not just the SQL files directly.
+  run('pnpm', ['db:generate'], env);
+  run('pnpm', ['db:init'], env);
+  run('pnpm', ['db:seed'], env);
   run('pnpm', ['--filter', '@student/api...', 'build'], env);
   run(process.execPath, ['packages/api/test/ai-workflow.mjs'], env);
 } finally {

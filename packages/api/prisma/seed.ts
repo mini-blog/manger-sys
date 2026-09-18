@@ -6,10 +6,19 @@ config({ path: '../../.env', quiet: true });
 if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required.');
 if (process.env.NODE_ENV === 'production')
   throw new Error('Development seed must not run in production.');
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-try {
-  await pool.query(await readFile(resolve('../../sql/development-seed.sql'), 'utf8'));
-  console.log('AI v2 fictional development fixtures loaded. See README for demo accounts.');
-} finally {
-  await pool.end();
+async function main() {
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    await pool.query(
+      await readFile(resolve(__dirname, '../../../sql/development-seed.sql'), 'utf8'),
+    );
+    console.log('AI v2 fictional development fixtures loaded. See README for demo accounts.');
+  } finally {
+    await pool.end();
+  }
 }
+
+main().catch(() => {
+  console.error('Development seed failed. Check database connectivity and schema initialization.');
+  process.exitCode = 1;
+});
